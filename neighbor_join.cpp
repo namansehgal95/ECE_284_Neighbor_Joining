@@ -11,6 +11,8 @@
 #include <cstdlib>
 #include <ctime>
 #include <iomanip>
+#include <climits>
+
 
 using namespace std;
 
@@ -189,7 +191,7 @@ void updateDistanceMatrix(double arr[MAX_TAXA][MAX_TAXA], int num_taxa, int min_
 
 int main() {
     
-    string file_name = "./examples/Evolution.in";
+    string file_name = "./examples/evolution.in";
     double arr[MAX_TAXA][MAX_TAXA];
     char seq[MAX_TAXA];
     Node* nodes[MAX_TAXA];
