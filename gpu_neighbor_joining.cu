@@ -234,7 +234,7 @@ __global__ void gpu_nj(int num_taxa, double* d_dist_mat, double* d_TD_arr, Node*
         // update the distance matrix parallely with new values at max index
 
         if((tid < num_taxa) && (tid != min_index) && (tid != max_index)) {
-            d_dist_mat[max_index*num_taxa + tid] = (d_dist_mat[min_index*num_taxa + tid] + d_dist_mat[max_index*num_taxa tid] - d_dist_mat[min_index*num_taxa + max_index]) / 2;
+            d_dist_mat[max_index*num_taxa + tid] = (d_dist_mat[min_index*num_taxa + tid] + d_dist_mat[max_index*num_taxa + tid] - d_dist_mat[min_index*num_taxa + max_index]) / 2;
             d_dist_mat[tid*num_taxa + max_index] = d_dist_mat[max_index*num_taxa + tid];
         }
 
@@ -277,17 +277,17 @@ int main() {
     int num_taxa;
     infile >> num_taxa;
     double dist_mat[num_taxa][num_taxa];
-    double d_dist_mat[num_taxa][num_taxa];
+    double d_dist_mat[num_taxa*num_taxa];
     char seq[num_taxa];
-    readFromFile(dist_mat, seq, filename, nodes);
     Node* nodes[num_taxa];
-    Node** d_nodes[num_taxa];
+    readFromFile(dist_mat, seq, filename, nodes);
+    Node* d_nodes[num_taxa];
     Node* d_temp_node;
     printDistanceMatrix(dist_mat, num_taxa, nodes);
-    int index1, index2;
-    int min_index, max_index;
-    double delta_ij, limb_length_i, limb_length_j;
-    int n;
+    //int index1, index2;
+    //int min_index, max_index;
+    //double delta_ij, limb_length_i, limb_length_j;
+    //int n;
     double TD_arr[num_taxa];
     double d_TD_arr[num_taxa];
 
@@ -298,10 +298,10 @@ int main() {
     // free GPU memory
 
     printf("*** Allocating GPU memory ***\n");
-    cudaMalloc((void**)(&(&d_dist_mat)), num_taxa*num_taxa*(sizeof(double)));
-    cudaMalloc((void**)(&(&d_TD_arr)), num_taxa*(sizeof(double)));
+    cudaMalloc((void**)(&d_dist_mat), num_taxa*num_taxa*(sizeof(double)));
+    cudaMalloc((void**)(&d_TD_arr), num_taxa*(sizeof(double)));
     cudaMalloc((void**)(&d_nodes), num_taxa*(sizeof(Node)));
-    cudaMalloc((void**)(&(&d_temp_node)), sizeof(Node));
+    cudaMalloc((void**)(&d_temp_node), sizeof(Node));
     printf("*** Allocating GPU memory complete ***\n\n");
 
     printf("*** Copying to GPU memory ***\n");
@@ -319,7 +319,7 @@ int main() {
     printf("***  GPU computation complete ***\n");
     cudaMemcpy(&dist_mat, &d_dist_mat, num_taxa*num_taxa*sizeof(double), cudaMemcpyDeviceToHost);
     cudaMemcpy(&TD_arr, &d_TD_arr, num_taxa*sizeof(double), cudaMemcpyDeviceToHost);
-    cudaMemcpy(&nodes, d_nodes, num_taxa*sizeof(double), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&nodes, &d_nodes, num_taxa*sizeof(double), cudaMemcpyDeviceToHost);
     printf("*** Transferring data from Device to Host complete ***\n");
 
     int final_index1 = -1;
