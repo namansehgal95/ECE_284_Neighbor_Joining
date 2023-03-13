@@ -19,7 +19,6 @@ using namespace std;
 const int MAX_TAXA = 100;
 
 struct node {
-    public:
     int node_name;
     struct node* leftChild;
     struct node* rightChild;
@@ -137,71 +136,16 @@ void traverseAndWrite(Node* node, ofstream& outfile) {
 }
 
 
-void totalDistance(double dist_mat[MAX_TAXA][MAX_TAXA], int num_taxa, double TD_arr[MAX_TAXA]){
 
-    // total NUM_TAXA threads,
-    // each thread will be calculating the sum for TD_arr[i]
-    for(int i=0; i<num_taxa; i++){
-        double sum=0;
-        if(dist_mat[i][0]!=-1) {
-            for (int k = 0; k < num_taxa; k++) {
-                if(dist_mat[k][0]!=-1){
-                    sum += dist_mat[i][k];
-                }
-            }
-            TD_arr[i] = sum;
-        } else{
-            TD_arr[i] = -1;
-        }
-    }
-}
-
-/// @brief Calculate indexes with minimum D_star and store in array variable pair
-// Check if -1
-void find_closest_pair(double dist_mat[MAX_TAXA][MAX_TAXA], int num_taxa, double TD_arr[MAX_TAXA], int& index1, int& index2) {
-    // less than num_taxa*num_taxa/2 threads used
-    // change this code:
-    // first create a D_star matrix in shared memory - each thread independently
-    // Then find the minimum of the D_star again using parallelism using parallel_red
-    
-    double min_distance = INT_MAX;
-    for (int i = 0; i < num_taxa; i++) {
-        if(dist_mat[i][0]!=-1) {
-            for (int j = i + 1; j < num_taxa; j++) {
-                if(dist_mat[j][0]!=-1){
-                    double D_star = (num_taxa - 2) * dist_mat[i][j] - TD_arr[i] - TD_arr[j];
-                    if (D_star < min_distance) {
-                        min_distance = D_star;
-                        index1 = i;
-                        index2 = j;
-                    }
-                }
-            }
-        }
-    }
-    //return min_distance / (num_taxa - 2);
-}
-
-void updateDistanceMatrix(double dist_mat[MAX_TAXA][MAX_TAXA], int num_taxa, int min_index, int max_index) {
-    // update the distance matrix parallely with new values
-    for (int k = 0; k < num_taxa; k++) {
-        if (k != min_index && k != max_index) {
-            dist_mat[max_index][k] = ( dist_mat[min_index][k] + dist_mat[max_index][k] - dist_mat[min_index][max_index]) / 2;
-            dist_mat[k][max_index] = dist_mat[max_index][k];
-        }
-    }
-    dist_mat[min_index][0] = dist_mat[0][min_index] = -1;
-}
-
-__global__ void gpu_nj(num_taxa, dist_mat, TD_arr, temp_dist_mat){
+__global__ void gpu_nj(int num_taxa, double* d_dist_mat, double* d_TD_arr, Node** d_nodes, Node* d_temp_node){
 
     /*
         Device variables needed - dist_mat, TD_arr
     */ 
 
     int tid = blockIdx.x*blockDim.x + threadIdx.x;
-    int t_row = tid / num_taxa;
-    int t_col = tid % num_taxa;
+    //int t_row = tid / num_taxa;
+    //int t_col = tid % num_taxa;
     __shared__ int index1, index2;
     __shared__ int min_index, max_index;
     __shared__ double delta_ij, limb_length_i, limb_length_j;
@@ -209,12 +153,13 @@ __global__ void gpu_nj(num_taxa, dist_mat, TD_arr, temp_dist_mat){
     int i;
     double sum, min_d_star_row;
     int new_node_name;
-    Node* temp_node;
 
     __shared__ double D_star_mat[100][2]; // declare in shared memory later
+    __shared__ double s_td_arr[100];
 
-    // load dist_mat in shared memory
     // load TD_arr in shared memory
+    if(tid < num_taxa);
+        s_td_arr[tid] = d_TD_arr[tid];
     
    
     // OPT - can go down the column per thread
@@ -224,28 +169,31 @@ __global__ void gpu_nj(num_taxa, dist_mat, TD_arr, temp_dist_mat){
         //totalDistance(dist_mat, num_taxa, TD_arr);
         // GPU implementation of totalDistance
         if(tid < num_taxa) {
-            if(dist_mat[tid][0] != -1) {
+            if(d_dist_mat[tid*num_taxa] != -1) {
                 sum=0;
                 for (int k = 0; k < num_taxa; k++) {
-                    if(dist_mat[k][0] != -1){
-                        sum += dist_mat[tid][k];
+                    if(d_dist_mat[k*num_taxa] != -1){
+                        sum += d_dist_mat[tid*num_taxa + k];
                     }
                 }
-                TD_arr[tid] = sum;
+                s_td_arr[tid] = sum;
             } else{
-                TD_arr[tid] = -1;
+                s_td_arr[tid] = -1;
             }
         }
+        __syncthreads();
 
 
-        //find_closest_pair(dist_mat,num_taxa, TD_arr, index1, index2);
+        //find_closest_pair(d_dist_mat,num_taxa, TD_arr, index1, index2);
         // GPU code for find_closest_pair
         min_d_star_row = INT_MAX;
+        
         if(tid < num_taxa) {
-            if(dist_mat[tid][0] != -1) {
+            D_star_mat[tid][0] = INT_MAX;
+            if(d_dist_mat[tid*num_taxa] != -1) {
                 for (int j = tid + 1; j < num_taxa; j++) {
-                    if(dist_mat[j][0] != -1){
-                        min_d_star_row = (num_taxa - 2) * dist_mat[tid][j] - TD_arr[tid] - TD_arr[j];
+                    if(d_dist_mat[j*num_taxa] != -1){
+                        min_d_star_row = (num_taxa - 2) * d_dist_mat[tid*num_taxa + j] - s_td_arr[tid] - s_td_arr[j];
                         if (min_d_star_row < D_star_mat[tid][0]) {
                             D_star_mat[tid][0] = min_d_star_row;
                             D_star_mat[tid][1] = j;
@@ -257,14 +205,14 @@ __global__ void gpu_nj(num_taxa, dist_mat, TD_arr, temp_dist_mat){
                     D_star_mat[tid][0] = INT_MAX;
                 }
             }
-        }
+        __syncthreads();
 
         // find the index pair which has absolute min among the d_star
         if(tid == 0) {
             min_d_star_row = INT_MAX;
             for (i = 0; i < num_taxa; i++) {
-                if(D_star_mat[tid][0] < min_d_star_row){
-                    min_d_star_row = D_star_mat[tid][0];
+                if(D_star_mat[i][0] < min_d_star_row){
+                    min_d_star_row = D_star_mat[i][0];
                     index1 = i;
                     index2 = D_star_mat[tid][1];
                 }
@@ -273,36 +221,46 @@ __global__ void gpu_nj(num_taxa, dist_mat, TD_arr, temp_dist_mat){
 
 
         if(tid == 0) {
-            min_index = index1 < index2 ? index1 : index2;
-            max_index = index1 < index2 ? index2 : index1;
-            delta_ij = (TD_arr[min_index] - TD_arr[max_index]) / (n-2);
-            limb_length_i = (dist_mat[min_index][max_index] + delta_ij)/2.0;
-            limb_length_j = (dist_mat[min_index][max_index] - delta_ij)/2.0;
+            min_index = (index1 < index2) ? index1 : index2;
+            max_index = (index1 < index2) ? index2 : index1;
+            delta_ij = (s_td_arr[min_index] - s_td_arr[max_index]) / (n-2);
+            limb_length_i = (d_dist_mat[min_index*num_taxa + max_index] + delta_ij)/2.0;
+            limb_length_j = (d_dist_mat[min_index*num_taxa + max_index] - delta_ij)/2.0;
         }
 
 
-        //updateDistanceMatrix(dist_mat,num_taxa, min_index, max_index);
+        //updateDistanceMatrix(d_dist_mat,num_taxa, min_index, max_index);
 
-        // update the distance matrix parallely with new values
-       
-        // create a new distance matrix and swap the pointers 
-        if((t_row != min_index) && (t_col !=  min_index) && (t_row != max_index) && (t_col !=  max_index)) {
-                temp_dist_mat[t_row][t_col] = (dist_mat[min_index][t_col] + dist_mat[max_index][t_col] - dist_mat[min_index][max_index]) / 2;
-        temp_dist_mat[min_index][0] = dist_mat[0][min_index] = -1;
+        // update the distance matrix parallely with new values at max index
+
+        if((tid < num_taxa) && (tid != min_index) && (tid != max_index)) {
+            d_dist_mat[max_index*num_taxa + tid] = (d_dist_mat[min_index*num_taxa + tid] + d_dist_mat[max_index*num_taxa tid] - d_dist_mat[min_index*num_taxa + max_index]) / 2;
+            d_dist_mat[tid*num_taxa + max_index] = d_dist_mat[max_index*num_taxa + tid];
         }
+
+
+        // turn min_index to -1,
         if(tid == 0){
-            temp_dist_mat[min_index][0] = -1;
-            temp_dist_mat[0][min_index] = -1;
-            dist_mat = temp_dist_mat;
-   
+            d_dist_mat[min_index*num_taxa] = -1;
+            d_dist_mat[min_index] = -1;
          
-            new_node_name = i;
-            temp_node = Node_new_all(new_node_name, nodes[min_index], nodes[max_index], limb_length_i, limb_length_j );
-            nodes[max_index] = temp_node;
-            nodes[min_index] = nullptr;
+            d_temp_node->node_name      = i;
+            d_temp_node->leftChild      = nullptr;
+            d_temp_node->rightChild     = nullptr;
+            d_temp_node->parent         = nullptr;
+            d_temp_node->distance_left  = -1;
+            d_temp_node->distance_right = -1;
+
+            // should not create a new node in GPU, rather just change the values of existing array
+            d_nodes[max_index] = d_temp_node;
+            d_nodes[min_index] = nullptr;
         }
         __syncthreads();
     }
+
+    // Copying the TD_arr back to GPU global memory
+    if(tid < num_taxa);
+        d_TD_arr[tid] = s_td_arr[tid];
 
 };
 
@@ -310,41 +268,59 @@ __global__ void gpu_nj(num_taxa, dist_mat, TD_arr, temp_dist_mat){
 
 int main() {
     
-    string file_name = "./examples/INGI2368.in";
-    double dist_mat[MAX_TAXA][MAX_TAXA];
-    char seq[MAX_TAXA];
-    Node* nodes[MAX_TAXA];
-    //int num_taxa = read_DM_file(dist_mat, seq, file_name, nodes);
-    int num_taxa = readFromFile(dist_mat, seq, file_name, nodes);
+    string filename = "./examples/INGI2368.in";
+    ifstream infile(filename);
+    if (!infile) {
+        cerr << "Error opening file" << endl;
+        exit(1);
+    }
+    int num_taxa;
+    infile >> num_taxa;
+    double dist_mat[num_taxa][num_taxa];
+    double d_dist_mat[num_taxa][num_taxa];
+    char seq[num_taxa];
+    readFromFile(dist_mat, seq, filename, nodes);
+    Node* nodes[num_taxa];
+    Node** d_nodes[num_taxa];
+    Node* d_temp_node;
     printDistanceMatrix(dist_mat, num_taxa, nodes);
     int index1, index2;
     int min_index, max_index;
     double delta_ij, limb_length_i, limb_length_j;
     int n;
-    double TD_arr[MAX_TAXA];
-
-    // Parallelize GPU
-    for(int i=0 ; i<num_taxa-2; i++) {
-        n = num_taxa - i;
-        totalDistance(dist_mat, num_taxa, TD_arr);
-        printTDMatrix(TD_arr, num_taxa);
-        find_closest_pair(dist_mat,num_taxa, TD_arr, index1, index2);
-        
-        min_index = min(index1, index2);
-        max_index = max(index1, index2);
-        delta_ij = (TD_arr[min_index] - TD_arr[max_index]) / (n-2);
-        limb_length_i = (dist_mat[min_index][max_index] + delta_ij)/2.0;
-        limb_length_j = (dist_mat[min_index][max_index] - delta_ij)/2.0;
-        updateDistanceMatrix(dist_mat,num_taxa, min_index, max_index);
-        int new_node_name = i;
-        cout<<to_string(new_node_name)<<endl;
-        Node* temp = Node_new_all(new_node_name, nodes[min_index], nodes[max_index], limb_length_i, limb_length_j );
-        nodes[max_index] = temp;
-        nodes[min_index] = nullptr;
-        printDistanceMatrix(dist_mat, num_taxa, nodes);
-    }
+    double TD_arr[num_taxa];
+    double d_TD_arr[num_taxa];
 
 
+    // allocate memory and copy the variables to GPU, 
+    // launch kernel
+    // copy the variables to CPU
+    // free GPU memory
+
+    printf("*** Allocating GPU memory ***\n");
+    cudaMalloc((void**)(&(&d_dist_mat)), num_taxa*num_taxa*(sizeof(double)));
+    cudaMalloc((void**)(&(&d_TD_arr)), num_taxa*(sizeof(double)));
+    cudaMalloc((void**)(&d_nodes), num_taxa*(sizeof(Node)));
+    cudaMalloc((void**)(&(&d_temp_node)), sizeof(Node));
+    printf("*** Allocating GPU memory complete ***\n\n");
+
+    printf("*** Copying to GPU memory ***\n");
+    cudaMemcpy(&d_dist_mat, &dist_mat, num_taxa*num_taxa*(sizeof(double)), cudaMemcpyHostToDevice);    
+    //cudaMemcpy(&d_TD_arr, &TD_arr, num_taxa*(sizeof(double)), cudaMemcpyHostToDevice);
+    //cudaMemcpy(&d_nodes, &nodes, num_taxa*(sizeof(double)), cudaMemcpyHostToDevice);
+    printf("*** Copying to GPU memory complete ***\n\n");
+
+    // Parallelize GPU set grid, block and call kernel
+    dim3 blockDim(32);
+    dim3 gridDim(ceil(num_taxa / 32));
+    
+    gpu_nj<<<gridDim, blockDim>>>(num_taxa, d_dist_mat, d_TD_arr, d_nodes, d_temp_node);
+    
+    printf("***  GPU computation complete ***\n");
+    cudaMemcpy(&dist_mat, &d_dist_mat, num_taxa*num_taxa*sizeof(double), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&TD_arr, &d_TD_arr, num_taxa*sizeof(double), cudaMemcpyDeviceToHost);
+    cudaMemcpy(&nodes, d_nodes, num_taxa*sizeof(double), cudaMemcpyDeviceToHost);
+    printf("*** Transferring data from Device to Host complete ***\n");
 
     int final_index1 = -1;
     int final_index2 = -1;
@@ -363,9 +339,9 @@ int main() {
     int root_node_name = i;
     cout<<to_string(root_node_name)<<endl;
     Node* root = Node_new_all(root_node_name, nodes[final_index1], nodes[final_index2], dist_mat[final_index1][final_index2]/2.0, dist_mat[final_index1][final_index2]/2.0 );
-
-    // cout<<nodes[0]->node_name<<" "<<nodes[1]->node_name;
     
+    printf("*** Final node computed ***\n");
+
     ofstream outfile("g.gv"); // open the output file
     if (!outfile) {
         cerr << "Error opening file" << endl;
