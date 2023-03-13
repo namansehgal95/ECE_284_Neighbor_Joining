@@ -52,7 +52,7 @@ Node* Node_new(int s) {
     return(this_node);
 }
 
-int readFromFile(double arr[MAX_TAXA][MAX_TAXA], char seq[MAX_TAXA], string filename, Node* nodes[MAX_TAXA]) {
+int readFromFile(double dist_mat[MAX_TAXA][MAX_TAXA], char seq[MAX_TAXA], string filename, Node* nodes[MAX_TAXA]) {
     cout<<filename<<endl;
     ifstream infile(filename);
 
@@ -67,7 +67,7 @@ int readFromFile(double arr[MAX_TAXA][MAX_TAXA], char seq[MAX_TAXA], string file
     //Initialize Distance Matrix to 0
     for (int i = 0; i < num_taxa; i++) {
         for (int j = 0; j < num_taxa; j++) {
-            arr[i][j] = 0;
+            dist_mat[i][j] = 0;
         }
     }
 
@@ -77,8 +77,8 @@ int readFromFile(double arr[MAX_TAXA][MAX_TAXA], char seq[MAX_TAXA], string file
         nodes[numRows] = Node_new({seq[numRows]});
 	    infile.peek();
         while (infile.peek() != '\n' && numCols < numRows) {
-            infile >> arr[numRows][numCols];
-            arr[numCols][numRows] = arr[numRows][numCols];
+            infile >> dist_mat[numRows][numCols];
+            dist_mat[numCols][numRows] = dist_mat[numRows][numCols];
             numCols++;
         }
         infile.ignore(); // ignore newline character
@@ -89,7 +89,7 @@ int readFromFile(double arr[MAX_TAXA][MAX_TAXA], char seq[MAX_TAXA], string file
     return num_taxa;
 }
 
-void printDistanceMatrix(double arr[MAX_TAXA][MAX_TAXA], int num_taxa, Node* nodes[MAX_TAXA]){
+void printDistanceMatrix(double dist_mat[MAX_TAXA][MAX_TAXA], int num_taxa, Node* nodes[MAX_TAXA]){
 	cout<< "Num_taxa = " << num_taxa <<endl;
     for (int i = 0; i < num_taxa; i++) {
         if(nodes[i]==nullptr)        {
@@ -99,7 +99,7 @@ void printDistanceMatrix(double arr[MAX_TAXA][MAX_TAXA], int num_taxa, Node* nod
 		    cout<<"Seq "<<i<<" = "<<to_string(nodes[i]->node_name) << " : ";
         }
         for (int j = 0; j < num_taxa; j++) {
-            cout << arr[i][j] << " ";
+            cout << dist_mat[i][j] << " ";
         }
         cout << endl;
     }
@@ -137,16 +137,16 @@ void traverseAndWrite(Node* node, ofstream& outfile) {
 }
 
 
-void totalDistance(double arr[MAX_TAXA][MAX_TAXA], int num_taxa, double TD_arr[MAX_TAXA]){
+void totalDistance(double dist_mat[MAX_TAXA][MAX_TAXA], int num_taxa, double TD_arr[MAX_TAXA]){
 
     // total NUM_TAXA threads,
     // each thread will be calculating the sum for TD_arr[i]
     for(int i=0; i<num_taxa; i++){
         double sum=0;
-        if(arr[i][0]!=-1) {
+        if(dist_mat[i][0]!=-1) {
             for (int k = 0; k < num_taxa; k++) {
-                if(arr[k][0]!=-1){
-                    sum += arr[i][k];
+                if(dist_mat[k][0]!=-1){
+                    sum += dist_mat[i][k];
                 }
             }
             TD_arr[i] = sum;
@@ -158,7 +158,7 @@ void totalDistance(double arr[MAX_TAXA][MAX_TAXA], int num_taxa, double TD_arr[M
 
 /// @brief Calculate indexes with minimum D_star and store in array variable pair
 // Check if -1
-void find_closest_pair(double arr[MAX_TAXA][MAX_TAXA], int num_taxa, double TD_arr[MAX_TAXA], int& index1, int& index2) {
+void find_closest_pair(double dist_mat[MAX_TAXA][MAX_TAXA], int num_taxa, double TD_arr[MAX_TAXA], int& index1, int& index2) {
     // less than num_taxa*num_taxa/2 threads used
     // change this code:
     // first create a D_star matrix in shared memory - each thread independently
@@ -166,10 +166,10 @@ void find_closest_pair(double arr[MAX_TAXA][MAX_TAXA], int num_taxa, double TD_a
     
     double min_distance = INT_MAX;
     for (int i = 0; i < num_taxa; i++) {
-        if(arr[i][0]!=-1) {
+        if(dist_mat[i][0]!=-1) {
             for (int j = i + 1; j < num_taxa; j++) {
-                if(arr[j][0]!=-1){
-                    double D_star = (num_taxa - 2) * arr[i][j] - TD_arr[i] - TD_arr[j];
+                if(dist_mat[j][0]!=-1){
+                    double D_star = (num_taxa - 2) * dist_mat[i][j] - TD_arr[i] - TD_arr[j];
                     if (D_star < min_distance) {
                         min_distance = D_star;
                         index1 = i;
@@ -182,60 +182,176 @@ void find_closest_pair(double arr[MAX_TAXA][MAX_TAXA], int num_taxa, double TD_a
     //return min_distance / (num_taxa - 2);
 }
 
-//Pending
-void updateDistanceMatrix(double arr[MAX_TAXA][MAX_TAXA], int num_taxa, int min_index, int max_index) {
+void updateDistanceMatrix(double dist_mat[MAX_TAXA][MAX_TAXA], int num_taxa, int min_index, int max_index) {
     // update the distance matrix parallely with new values
     for (int k = 0; k < num_taxa; k++) {
         if (k != min_index && k != max_index) {
-            arr[max_index][k] = ( arr[min_index][k] + arr[max_index][k] - arr[min_index][max_index]) / 2;
-            arr[k][max_index] = arr[max_index][k];
+            dist_mat[max_index][k] = ( dist_mat[min_index][k] + dist_mat[max_index][k] - dist_mat[min_index][max_index]) / 2;
+            dist_mat[k][max_index] = dist_mat[max_index][k];
         }
     }
-    arr[min_index][0] = arr[0][min_index] = -1;
+    dist_mat[min_index][0] = dist_mat[0][min_index] = -1;
 }
+
+__global__ void gpu_nj(num_taxa, dist_mat, TD_arr, temp_dist_mat){
+
+    /*
+        Device variables needed - dist_mat, TD_arr
+    */ 
+
+    int tid = blockIdx.x*blockDim.x + threadIdx.x;
+    int t_row = tid / num_taxa;
+    int t_col = tid % num_taxa;
+    __shared__ int index1, index2;
+    __shared__ int min_index, max_index;
+    __shared__ double delta_ij, limb_length_i, limb_length_j;
+    int n;
+    int i;
+    double sum, min_d_star_row;
+    int new_node_name;
+    Node* temp_node;
+
+    __shared__ double D_star_mat[100][2]; // declare in shared memory later
+
+    // load dist_mat in shared memory
+    // load TD_arr in shared memory
+    
+   
+    // OPT - can go down the column per thread
+    // parallel sum possible 
+    for(int i=0 ; i<num_taxa-2; i++) {
+        n = num_taxa - i;
+        //totalDistance(dist_mat, num_taxa, TD_arr);
+        // GPU implementation of totalDistance
+        if(tid < num_taxa) {
+            if(dist_mat[tid][0] != -1) {
+                sum=0;
+                for (int k = 0; k < num_taxa; k++) {
+                    if(dist_mat[k][0] != -1){
+                        sum += dist_mat[tid][k];
+                    }
+                }
+                TD_arr[tid] = sum;
+            } else{
+                TD_arr[tid] = -1;
+            }
+        }
+
+
+        //find_closest_pair(dist_mat,num_taxa, TD_arr, index1, index2);
+        // GPU code for find_closest_pair
+        min_d_star_row = INT_MAX;
+        if(tid < num_taxa) {
+            if(dist_mat[tid][0] != -1) {
+                for (int j = tid + 1; j < num_taxa; j++) {
+                    if(dist_mat[j][0] != -1){
+                        min_d_star_row = (num_taxa - 2) * dist_mat[tid][j] - TD_arr[tid] - TD_arr[j];
+                        if (min_d_star_row < D_star_mat[tid][0]) {
+                            D_star_mat[tid][0] = min_d_star_row;
+                            D_star_mat[tid][1] = j;
+                            
+                            }
+                        }
+                    }
+                } else {
+                    D_star_mat[tid][0] = INT_MAX;
+                }
+            }
+        }
+
+        // find the index pair which has absolute min among the d_star
+        if(tid == 0) {
+            min_d_star_row = INT_MAX;
+            for (i = 0; i < num_taxa; i++) {
+                if(D_star_mat[tid][0] < min_d_star_row){
+                    min_d_star_row = D_star_mat[tid][0];
+                    index1 = i;
+                    index2 = D_star_mat[tid][1];
+                }
+            }
+        }
+
+
+        if(tid == 0) {
+            min_index = index1 < index2 ? index1 : index2;
+            max_index = index1 < index2 ? index2 : index1;
+            delta_ij = (TD_arr[min_index] - TD_arr[max_index]) / (n-2);
+            limb_length_i = (dist_mat[min_index][max_index] + delta_ij)/2.0;
+            limb_length_j = (dist_mat[min_index][max_index] - delta_ij)/2.0;
+        }
+
+
+        //updateDistanceMatrix(dist_mat,num_taxa, min_index, max_index);
+
+        // update the distance matrix parallely with new values
+       
+        // create a new distance matrix and swap the pointers 
+        if((t_row != min_index) && (t_col !=  min_index) && (t_row != max_index) && (t_col !=  max_index)) {
+                temp_dist_mat[t_row][t_col] = (dist_mat[min_index][t_col] + dist_mat[max_index][t_col] - dist_mat[min_index][max_index]) / 2;
+        temp_dist_mat[min_index][0] = dist_mat[0][min_index] = -1;
+        }
+        if(tid == 0){
+            temp_dist_mat[min_index][0] = -1;
+            temp_dist_mat[0][min_index] = -1;
+            dist_mat = temp_dist_mat;
+   
+         
+            new_node_name = i;
+            temp_node = Node_new_all(new_node_name, nodes[min_index], nodes[max_index], limb_length_i, limb_length_j );
+            nodes[max_index] = temp_node;
+            nodes[min_index] = nullptr;
+        }
+        __syncthreads();
+    }
+
+};
+
+
 
 int main() {
     
     string file_name = "./examples/INGI2368.in";
-    double arr[MAX_TAXA][MAX_TAXA];
+    double dist_mat[MAX_TAXA][MAX_TAXA];
     char seq[MAX_TAXA];
     Node* nodes[MAX_TAXA];
-    //int num_taxa = read_DM_file(arr, seq, file_name, nodes);
-    int num_taxa = readFromFile(arr, seq, file_name, nodes);
-    printDistanceMatrix(arr, num_taxa, nodes);
+    //int num_taxa = read_DM_file(dist_mat, seq, file_name, nodes);
+    int num_taxa = readFromFile(dist_mat, seq, file_name, nodes);
+    printDistanceMatrix(dist_mat, num_taxa, nodes);
     int index1, index2;
     int min_index, max_index;
     double delta_ij, limb_length_i, limb_length_j;
     int n;
-
     double TD_arr[MAX_TAXA];
-    for(int i=0 ; i<num_taxa -2; i++) {
+
+    // Parallelize GPU
+    for(int i=0 ; i<num_taxa-2; i++) {
         n = num_taxa - i;
-        // Parallelize GPU
-        totalDistance(arr, num_taxa, TD_arr);
+        totalDistance(dist_mat, num_taxa, TD_arr);
         printTDMatrix(TD_arr, num_taxa);
-        find_closest_pair(arr,num_taxa, TD_arr, index1, index2);
-        //}
+        find_closest_pair(dist_mat,num_taxa, TD_arr, index1, index2);
         
         min_index = min(index1, index2);
         max_index = max(index1, index2);
         delta_ij = (TD_arr[min_index] - TD_arr[max_index]) / (n-2);
-        limb_length_i = (arr[min_index][max_index] + delta_ij)/2.0;
-        limb_length_j = (arr[min_index][max_index] - delta_ij)/2.0;
-        updateDistanceMatrix(arr,num_taxa, min_index, max_index);
+        limb_length_i = (dist_mat[min_index][max_index] + delta_ij)/2.0;
+        limb_length_j = (dist_mat[min_index][max_index] - delta_ij)/2.0;
+        updateDistanceMatrix(dist_mat,num_taxa, min_index, max_index);
         int new_node_name = i;
         cout<<to_string(new_node_name)<<endl;
         Node* temp = Node_new_all(new_node_name, nodes[min_index], nodes[max_index], limb_length_i, limb_length_j );
         nodes[max_index] = temp;
         nodes[min_index] = nullptr;
-        printDistanceMatrix(arr, num_taxa, nodes);
+        printDistanceMatrix(dist_mat, num_taxa, nodes);
     }
+
+
+
     int final_index1 = -1;
     int final_index2 = -1;
 
     int i;
     for(i=0 ; i<num_taxa ; i++) {
-        if(arr[i][0]!=-1)
+        if(dist_mat[i][0]!=-1)
         {
             if(final_index1==-1)
                 final_index1 = i;
@@ -246,7 +362,7 @@ int main() {
 
     int root_node_name = i;
     cout<<to_string(root_node_name)<<endl;
-    Node* root = Node_new_all(root_node_name, nodes[final_index1], nodes[final_index2], arr[final_index1][final_index2]/2.0, arr[final_index1][final_index2]/2.0 );
+    Node* root = Node_new_all(root_node_name, nodes[final_index1], nodes[final_index2], dist_mat[final_index1][final_index2]/2.0, dist_mat[final_index1][final_index2]/2.0 );
 
     // cout<<nodes[0]->node_name<<" "<<nodes[1]->node_name;
     
