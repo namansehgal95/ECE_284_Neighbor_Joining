@@ -152,7 +152,6 @@ __global__ void gpu_nj(int num_taxa, double* d_dist_mat, double* d_TD_arr, Node*
     int n;
     int i;
     double sum, min_d_star_row;
-    int new_node_name;
 
     __shared__ double D_star_mat[100][2]; // declare in shared memory later
     __shared__ double s_td_arr[100];
@@ -164,7 +163,7 @@ __global__ void gpu_nj(int num_taxa, double* d_dist_mat, double* d_TD_arr, Node*
    
     // OPT - can go down the column per thread
     // parallel sum possible 
-    for(int i=0 ; i<num_taxa-2; i++) {
+    for(i=0 ; i<num_taxa-2; i++) {
         n = num_taxa - i;
         //totalDistance(dist_mat, num_taxa, TD_arr);
         // GPU implementation of totalDistance
@@ -210,10 +209,10 @@ __global__ void gpu_nj(int num_taxa, double* d_dist_mat, double* d_TD_arr, Node*
         // find the index pair which has absolute min among the d_star
         if(tid == 0) {
             min_d_star_row = INT_MAX;
-            for (i = 0; i < num_taxa; i++) {
-                if(D_star_mat[i][0] < min_d_star_row){
-                    min_d_star_row = D_star_mat[i][0];
-                    index1 = i;
+            for (int j = 0; j < num_taxa; j++) {
+                if(D_star_mat[j][0] < min_d_star_row){
+                    min_d_star_row = D_star_mat[j][0];
+                    index1 = j;
                     index2 = D_star_mat[tid][1];
                 }
             }
@@ -276,7 +275,7 @@ int main() {
     }
     int num_taxa;
     infile >> num_taxa;
-    double dist_mat[num_taxa][num_taxa];
+    double dist_mat[MAX_TAXA][MAX_TAXA];
     double d_dist_mat[num_taxa*num_taxa];
     char seq[num_taxa];
     Node* nodes[num_taxa];
@@ -305,7 +304,7 @@ int main() {
     printf("*** Allocating GPU memory complete ***\n\n");
 
     printf("*** Copying to GPU memory ***\n");
-    cudaMemcpy(&d_dist_mat, &dist_mat, num_taxa*num_taxa*(sizeof(double)), cudaMemcpyHostToDevice);    
+    cudaMemcpy(d_dist_mat, dist_mat, num_taxa*num_taxa*(sizeof(double)), cudaMemcpyHostToDevice);    
     //cudaMemcpy(&d_TD_arr, &TD_arr, num_taxa*(sizeof(double)), cudaMemcpyHostToDevice);
     //cudaMemcpy(&d_nodes, &nodes, num_taxa*(sizeof(double)), cudaMemcpyHostToDevice);
     printf("*** Copying to GPU memory complete ***\n\n");
@@ -317,9 +316,9 @@ int main() {
     gpu_nj<<<gridDim, blockDim>>>(num_taxa, d_dist_mat, d_TD_arr, d_nodes, d_temp_node);
     
     printf("***  GPU computation complete ***\n");
-    cudaMemcpy(&dist_mat, &d_dist_mat, num_taxa*num_taxa*sizeof(double), cudaMemcpyDeviceToHost);
-    cudaMemcpy(&TD_arr, &d_TD_arr, num_taxa*sizeof(double), cudaMemcpyDeviceToHost);
-    cudaMemcpy(&nodes, &d_nodes, num_taxa*sizeof(double), cudaMemcpyDeviceToHost);
+    cudaMemcpy(dist_mat, d_dist_mat, num_taxa*num_taxa*sizeof(double), cudaMemcpyDeviceToHost);
+    cudaMemcpy(TD_arr, d_TD_arr, num_taxa*sizeof(double), cudaMemcpyDeviceToHost);
+    cudaMemcpy(nodes, d_nodes, num_taxa*sizeof(double), cudaMemcpyDeviceToHost);
     printf("*** Transferring data from Device to Host complete ***\n");
 
     int final_index1 = -1;
@@ -341,6 +340,7 @@ int main() {
     Node* root = Node_new_all(root_node_name, nodes[final_index1], nodes[final_index2], dist_mat[final_index1][final_index2]/2.0, dist_mat[final_index1][final_index2]/2.0 );
     
     printf("*** Final node computed ***\n");
+    printDistanceMatrix(dist_mat, num_taxa, nodes);
 
     ofstream outfile("g.gv"); // open the output file
     if (!outfile) {
