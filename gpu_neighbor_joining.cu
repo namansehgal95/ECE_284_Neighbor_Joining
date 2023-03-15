@@ -18,6 +18,15 @@ using namespace std;
 
 const int MAX_TAXA = 100;
 
+void checkCudaError(cudaError_t err)
+{
+    if (err != cudaSuccess) {
+        printf("%s: %s\n", cudaGetErrorName(err), cudaGetErrorString(err));
+        exit(1);
+    }
+}
+
+
 struct node {
     int node_name;
     struct node* leftChild;
@@ -51,7 +60,7 @@ Node* Node_new(int s) {
     return(this_node);
 }
 
-int readFromFile(double dist_mat[MAX_TAXA][MAX_TAXA], char seq[MAX_TAXA], string filename, Node* nodes[MAX_TAXA]) {
+int readFromFile(double* dist_mat, char seq[MAX_TAXA], string filename, Node* nodes[MAX_TAXA]) {
     cout<<filename<<endl;
     ifstream infile(filename);
 
@@ -66,7 +75,7 @@ int readFromFile(double dist_mat[MAX_TAXA][MAX_TAXA], char seq[MAX_TAXA], string
     //Initialize Distance Matrix to 0
     for (int i = 0; i < num_taxa; i++) {
         for (int j = 0; j < num_taxa; j++) {
-            dist_mat[i][j] = 0;
+            dist_mat[i*num_taxa + j] = 0;
         }
     }
 
@@ -76,8 +85,8 @@ int readFromFile(double dist_mat[MAX_TAXA][MAX_TAXA], char seq[MAX_TAXA], string
         nodes[numRows] = Node_new({seq[numRows]});
 	    infile.peek();
         while (infile.peek() != '\n' && numCols < numRows) {
-            infile >> dist_mat[numRows][numCols];
-            dist_mat[numCols][numRows] = dist_mat[numRows][numCols];
+            infile >> dist_mat[numRows*num_taxa + numCols];
+            dist_mat[numCols*num_taxa + numRows] = dist_mat[numRows*num_taxa + numCols];
             numCols++;
         }
         infile.ignore(); // ignore newline character
@@ -88,7 +97,7 @@ int readFromFile(double dist_mat[MAX_TAXA][MAX_TAXA], char seq[MAX_TAXA], string
     return num_taxa;
 }
 
-void printDistanceMatrix(double dist_mat[MAX_TAXA][MAX_TAXA], int num_taxa, Node* nodes[MAX_TAXA]){
+void printDistanceMatrix(double* dist_mat, int num_taxa, Node* nodes[MAX_TAXA]){
 	cout<< "Num_taxa = " << num_taxa <<endl;
     for (int i = 0; i < num_taxa; i++) {
         if(nodes[i]==nullptr)        {
@@ -98,7 +107,7 @@ void printDistanceMatrix(double dist_mat[MAX_TAXA][MAX_TAXA], int num_taxa, Node
 		    cout<<"Seq "<<i<<" = "<<to_string(nodes[i]->node_name) << " : ";
         }
         for (int j = 0; j < num_taxa; j++) {
-            cout << dist_mat[i][j] << " ";
+            cout << dist_mat[i*num_taxa + j] << " ";
         }
         cout << endl;
     }
@@ -153,13 +162,14 @@ __global__ void gpu_nj(int num_taxa, double* d_dist_mat, double* d_TD_arr, Node*
     int i;
     double sum, min_d_star_row;
 
-    __shared__ double D_star_mat[100][2]; // declare in shared memory later
-    __shared__ double s_td_arr[100];
+    __shared__ double D_star_mat[32][2]; // declare in shared memory later
+    __shared__ double s_td_arr[32];
 
     // load TD_arr in shared memory
-    if(tid < num_taxa);
-        s_td_arr[tid] = d_TD_arr[tid];
-    
+    //if(tid < num_taxa);
+    //    s_td_arr[tid] = d_TD_arr[tid];
+    if(tid == 0)
+        printf("Entered the GPU\n");
    
     // OPT - can go down the column per thread
     // parallel sum possible 
@@ -258,8 +268,11 @@ __global__ void gpu_nj(int num_taxa, double* d_dist_mat, double* d_TD_arr, Node*
     }
 
     // Copying the TD_arr back to GPU global memory
-    if(tid < num_taxa);
-        d_TD_arr[tid] = s_td_arr[tid];
+
+    //if(tid < num_taxa);
+    //    d_TD_arr[tid] = s_td_arr[tid];
+
+    __syncthreads();
 
 };
 
@@ -275,12 +288,14 @@ int main() {
     }
     int num_taxa;
     infile >> num_taxa;
-    double dist_mat[MAX_TAXA][MAX_TAXA];
-    double d_dist_mat[num_taxa*num_taxa];
+    //double dist_mat[num_taxa*num_taxa];
+    double* dist_mat;
+    dist_mat = (double *)malloc(num_taxa*num_taxa*sizeof(double));
+    double* d_dist_mat;
     char seq[num_taxa];
     Node* nodes[num_taxa];
     readFromFile(dist_mat, seq, filename, nodes);
-    Node* d_nodes[num_taxa];
+    Node** d_nodes;
     Node* d_temp_node;
     printDistanceMatrix(dist_mat, num_taxa, nodes);
     //int index1, index2;
@@ -288,8 +303,7 @@ int main() {
     //double delta_ij, limb_length_i, limb_length_j;
     //int n;
     double TD_arr[num_taxa];
-    double d_TD_arr[num_taxa];
-
+    double* d_TD_arr;
 
     // allocate memory and copy the variables to GPU, 
     // launch kernel
@@ -304,21 +318,25 @@ int main() {
     printf("*** Allocating GPU memory complete ***\n\n");
 
     printf("*** Copying to GPU memory ***\n");
-    cudaMemcpy(d_dist_mat, dist_mat, num_taxa*num_taxa*(sizeof(double)), cudaMemcpyHostToDevice);    
+    checkCudaError(cudaMemcpy(d_dist_mat, dist_mat, num_taxa*num_taxa*(sizeof(double)), cudaMemcpyHostToDevice));    
     //cudaMemcpy(&d_TD_arr, &TD_arr, num_taxa*(sizeof(double)), cudaMemcpyHostToDevice);
-    //cudaMemcpy(&d_nodes, &nodes, num_taxa*(sizeof(double)), cudaMemcpyHostToDevice);
+    //cudaMemcpy(&d_nodes, &nodes, num_taxa*(sizeof(Node)), cudaMemcpyHostToDevice);
     printf("*** Copying to GPU memory complete ***\n\n");
 
     // Parallelize GPU set grid, block and call kernel
-    dim3 blockDim(32);
-    dim3 gridDim(ceil(num_taxa / 32));
+    int blocksize = 32;
+    int gridsize = (num_taxa + 31) / 32;
     
-    gpu_nj<<<gridDim, blockDim>>>(num_taxa, d_dist_mat, d_TD_arr, d_nodes, d_temp_node);
-    
+    gpu_nj<<<gridsize, blocksize>>>(num_taxa, d_dist_mat, d_TD_arr, d_nodes, d_temp_node);
+    checkCudaError(cudaGetLastError());
+    cudaDeviceSynchronize();    
     printf("***  GPU computation complete ***\n");
-    cudaMemcpy(dist_mat, d_dist_mat, num_taxa*num_taxa*sizeof(double), cudaMemcpyDeviceToHost);
-    cudaMemcpy(TD_arr, d_TD_arr, num_taxa*sizeof(double), cudaMemcpyDeviceToHost);
-    cudaMemcpy(nodes, d_nodes, num_taxa*sizeof(double), cudaMemcpyDeviceToHost);
+
+    checkCudaError(cudaMemcpy(dist_mat, d_dist_mat, num_taxa*num_taxa*sizeof(double), cudaMemcpyDeviceToHost));
+    printf("*** Transferring data from Device to Host complete ***\n");
+    checkCudaError(cudaMemcpy(TD_arr, d_TD_arr, num_taxa*sizeof(double), cudaMemcpyDeviceToHost));
+    printf("*** Transferring data from Device to Host complete ***\n");
+    //checkCudaError(cudaMemcpy(nodes, *d_nodes, num_taxa*sizeof(Node), cudaMemcpyDeviceToHost));
     printf("*** Transferring data from Device to Host complete ***\n");
 
     int final_index1 = -1;
@@ -326,7 +344,7 @@ int main() {
 
     int i;
     for(i=0 ; i<num_taxa ; i++) {
-        if(dist_mat[i][0]!=-1)
+        if(dist_mat[i*num_taxa + 0]!=-1)
         {
             if(final_index1==-1)
                 final_index1 = i;
@@ -337,7 +355,7 @@ int main() {
 
     int root_node_name = i;
     cout<<to_string(root_node_name)<<endl;
-    Node* root = Node_new_all(root_node_name, nodes[final_index1], nodes[final_index2], dist_mat[final_index1][final_index2]/2.0, dist_mat[final_index1][final_index2]/2.0 );
+    Node* root = Node_new_all(root_node_name, nodes[final_index1], nodes[final_index2], dist_mat[final_index1*num_taxa + final_index2]/2.0, dist_mat[final_index1*num_taxa + final_index2]/2.0 );
     
     printf("*** Final node computed ***\n");
     printDistanceMatrix(dist_mat, num_taxa, nodes);
@@ -352,6 +370,7 @@ int main() {
     outfile << "}" << endl;
     outfile.close();
 
+    //FIXME:free the gpu memory and all variables
 
     return 0;
 }
