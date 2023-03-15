@@ -13,8 +13,10 @@
 #include <ctime>
 #include <iomanip>
 #include <climits>
+#include <chrono>
 
 using namespace std;
+using namespace std::chrono;
 
 const int MAX_TAXA = 100;
 
@@ -280,7 +282,7 @@ __global__ void gpu_nj(int num_taxa, double* d_dist_mat, double* d_TD_arr, Node*
 
 int main() {
     
-    string filename = "./examples/INGI2368.in";
+    string filename = "./examples/evolution.in";
     ifstream infile(filename);
     if (!infile) {
         cerr << "Error opening file" << endl;
@@ -326,10 +328,16 @@ int main() {
     // Parallelize GPU set grid, block and call kernel
     int blocksize = 32;
     int gridsize = (num_taxa + 31) / 32;
-    
+   
+    auto start_time = high_resolution_clock::now(); 
     gpu_nj<<<gridsize, blocksize>>>(num_taxa, d_dist_mat, d_TD_arr, d_nodes, d_temp_node);
-    checkCudaError(cudaGetLastError());
     cudaDeviceSynchronize();    
+    auto end_time = high_resolution_clock::now();
+    auto duration = duration_cast<microseconds>(end_time - start_time);
+    printf("### \n Elapsed Time %" PRId64 "\n###\n", duration.count());
+   
+ 
+    checkCudaError(cudaGetLastError());
     printf("***  GPU computation complete ***\n");
 
     checkCudaError(cudaMemcpy(dist_mat, d_dist_mat, num_taxa*num_taxa*sizeof(double), cudaMemcpyDeviceToHost));

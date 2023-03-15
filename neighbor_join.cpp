@@ -12,9 +12,11 @@
 #include <ctime>
 #include <iomanip>
 #include <climits>
+#include <chrono>
 
 
 using namespace std;
+using namespace std::chrono;
 
 const int MAX_TAXA = 100;
 
@@ -200,6 +202,8 @@ int main() {
     printDistanceMatrix(arr, num_taxa, nodes);
 
     double TD_arr[MAX_TAXA];
+    auto start_time = high_resolution_clock::now();
+
     for(int i=0 ; i<num_taxa -2; i++) {
         //{Need to plug in neighbor joining below to get indexes
         int index1;
@@ -222,8 +226,14 @@ int main() {
         Node* temp = new Node(new_node_name, nodes[min_index], nodes[max_index], limb_length_i, limb_length_j );
         nodes[max_index] = temp;
         nodes[min_index] = nullptr;
-        printDistanceMatrix(arr, num_taxa, nodes);
+        //printDistanceMatrix(arr, num_taxa, nodes);
     }
+    
+    auto end_time = high_resolution_clock::now();
+    auto duration = duration_cast<microseconds>(end_time - start_time);
+    printf("### \n Elapsed Time %" PRId64 "\n###\n", duration.count());
+
+
     int final_index1 = -1;
     int final_index2 = -1;
 
