@@ -74,7 +74,6 @@ int readFromFile(double* dist_mat, char seq[MAX_TAXA], string filename, Node* no
     infile >> num_taxa;
     infile.peek();
     int numRows = 0, numCols = 0;
-    //Initialize Distance Matrix to 0
     for (int i = 0; i < num_taxa; i++) {
         for (int j = 0; j < num_taxa; j++) {
             dist_mat[i*num_taxa + j] = 0;
@@ -164,23 +163,21 @@ __global__ void gpu_nj(int num_taxa, double* d_dist_mat, double* d_TD_arr, Node*
     int i;
     double sum, min_d_star_row;
 
-    __shared__ double D_star_mat[32][2]; // declare in shared memory later
+    __shared__ double D_star_mat[32][2]; 
     __shared__ double s_td_arr[32];
 
-    // load TD_arr in shared memory
     //if(tid < num_taxa);
     //    s_td_arr[tid] = d_TD_arr[tid];
     if(tid == 0)
         printf("Entered the GPU\n");
    
-    // OPT - can go down the column per thread
+    // FIXME: OPT - can go down the column per thread
     // parallel sum possible 
     for(i=0 ; i<num_taxa-2; i++) {
         n = num_taxa - i;
-        //totalDistance(dist_mat, num_taxa, TD_arr);
         // GPU implementation of totalDistance
         if(tid < num_taxa) {
-            if(d_dist_mat[tid*num_taxa] != -1) {
+            if(d_dist_mat[tid] != -1) { // if first row has value != -1
                 sum=0;
                 for (int k = 0; k < num_taxa; k++) {
                     if(d_dist_mat[k*num_taxa] != -1){
@@ -204,7 +201,7 @@ __global__ void gpu_nj(int num_taxa, double* d_dist_mat, double* d_TD_arr, Node*
             if(d_dist_mat[tid*num_taxa] != -1) {
                 for (int j = tid + 1; j < num_taxa; j++) {
                     if(d_dist_mat[j*num_taxa] != -1){
-                        min_d_star_row = (num_taxa - 2) * d_dist_mat[tid*num_taxa + j] - s_td_arr[tid] - s_td_arr[j];
+                        min_d_star_row = (n - 2) * d_dist_mat[tid*num_taxa + j] - s_td_arr[tid] - s_td_arr[j];
                         if (min_d_star_row < D_star_mat[tid][0]) {
                             D_star_mat[tid][0] = min_d_star_row;
                             D_star_mat[tid][1] = j;
@@ -282,7 +279,8 @@ __global__ void gpu_nj(int num_taxa, double* d_dist_mat, double* d_TD_arr, Node*
 
 int main() {
     
-    string filename = "./examples/evolution.in";
+    //string filename = "./examples/evolution.in";
+    string filename = "./examples/INGI2368.in";
     ifstream infile(filename);
     if (!infile) {
         cerr << "Error opening file" << endl;

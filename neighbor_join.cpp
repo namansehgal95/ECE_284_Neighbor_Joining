@@ -161,13 +161,13 @@ void totalDistance(double arr[MAX_TAXA][MAX_TAXA], int num_taxa, double TD_arr[M
 
 /// @brief Calculate indexes with minimum D_star and store in array variable pair
 // Check if -1
-void find_closest_pair(double arr[MAX_TAXA][MAX_TAXA], int num_taxa, double TD_arr[MAX_TAXA], int& index1, int& index2) {
+void find_closest_pair(double arr[MAX_TAXA][MAX_TAXA], int num_taxa, int n, double TD_arr[MAX_TAXA], int& index1, int& index2) {
     double min_distance = INT_MAX;
     for (int i = 0; i < num_taxa; i++) {
         if(arr[i][0]!=-1) {
             for (int j = i + 1; j < num_taxa; j++) {
                 if(arr[j][0]!=-1){
-                    double D_star = (num_taxa - 2) * arr[i][j] - TD_arr[i] - TD_arr[j];
+                    double D_star = (n - 2) * arr[i][j] - TD_arr[i] - TD_arr[j];
                     if (D_star < min_distance) {
                         min_distance = D_star;
                         index1 = i;
@@ -193,7 +193,8 @@ void updateDistanceMatrix(double arr[MAX_TAXA][MAX_TAXA], int num_taxa, int min_
 
 int main() {
     
-    string file_name = "./examples/evolution.in";
+    //string file_name = "./examples/evolution.in";
+    string file_name = "./examples/INGI2368.in";
     double arr[MAX_TAXA][MAX_TAXA];
     char seq[MAX_TAXA];
     Node* nodes[MAX_TAXA];
@@ -212,7 +213,7 @@ int main() {
         //getRandomIndexes(index1, index2, n);
         totalDistance(arr, num_taxa, TD_arr);
         printTDMatrix(TD_arr, num_taxa);
-        find_closest_pair(arr,num_taxa, TD_arr, index1, index2);
+        find_closest_pair(arr,num_taxa, n, TD_arr, index1, index2);
         //}
         
         int min_index = min(index1, index2);
@@ -226,7 +227,7 @@ int main() {
         Node* temp = new Node(new_node_name, nodes[min_index], nodes[max_index], limb_length_i, limb_length_j );
         nodes[max_index] = temp;
         nodes[min_index] = nullptr;
-        //printDistanceMatrix(arr, num_taxa, nodes);
+        printDistanceMatrix(arr, num_taxa, nodes);
     }
     
     auto end_time = high_resolution_clock::now();
