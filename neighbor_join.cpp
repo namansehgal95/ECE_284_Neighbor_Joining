@@ -178,6 +178,7 @@ void find_closest_pair(double arr[MAX_TAXA][MAX_TAXA], int num_taxa, int n, doub
         }
     }
     //return min_distance / (num_taxa - 2);
+    //printf("min_d_star is %lf, for i=%d, j=%d\n", min_distance, index1, index2);
 }
 
 //Pending
@@ -193,8 +194,8 @@ void updateDistanceMatrix(double arr[MAX_TAXA][MAX_TAXA], int num_taxa, int min_
 
 int main() {
     
-    //string file_name = "./examples/evolution.in";
-    string file_name = "./examples/INGI2368.in";
+    string file_name = "./examples/evolution.in";
+    //string file_name = "./examples/INGI2368.in";
     double arr[MAX_TAXA][MAX_TAXA];
     char seq[MAX_TAXA];
     Node* nodes[MAX_TAXA];
@@ -227,7 +228,8 @@ int main() {
         Node* temp = new Node(new_node_name, nodes[min_index], nodes[max_index], limb_length_i, limb_length_j );
         nodes[max_index] = temp;
         nodes[min_index] = nullptr;
-        printDistanceMatrix(arr, num_taxa, nodes);
+        //printf("delta_ij = %lf, Li = %lf, Lj = %lf\n", delta_ij, limb_length_i, limb_length_j);
+        //printDistanceMatrix(arr, num_taxa, nodes);
     }
     
     auto end_time = high_resolution_clock::now();
