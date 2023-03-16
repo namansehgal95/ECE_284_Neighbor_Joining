@@ -80,10 +80,12 @@ int readFromFile(double* dist_mat, char seq[MAX_TAXA], string filename, Node* no
         }
     }
 
+    string s;
+    int l_node = 0;
     while (!infile.eof() && numRows < num_taxa) {
         numCols = 0;
-	    infile >> seq[numRows];
-        nodes[numRows] = Node_new({seq[numRows]});
+	    infile >> s;
+        nodes[numRows] = Node_new(l_node);
 	    infile.peek();
         while (infile.peek() != '\n' && numCols < numRows) {
             infile >> dist_mat[numRows*num_taxa + numCols];
@@ -92,6 +94,7 @@ int readFromFile(double* dist_mat, char seq[MAX_TAXA], string filename, Node* no
         }
         infile.ignore(); // ignore newline character
         numRows++;
+        l_node++;
     }
 
     infile.close();
@@ -156,20 +159,40 @@ __global__ void gpu_nj(int num_taxa, double* d_dist_mat, double* d_TD_arr, Node*
     int tid = blockIdx.x*blockDim.x + threadIdx.x;
     //int t_row = tid / num_taxa;
     //int t_col = tid % num_taxa;
-    __shared__ int index1, index2;
+    //__shared__ int index1, index2;
+    //__shared__ int min_index, max_index;
+    //__shared__ double delta_ij, limb_length_i, limb_length_j;
+    //__shared__ double D_star_mat[32][2]; 
+    //__shared__ double s_td_arr[32];
+
+    int index1, index2;
     __shared__ int min_index, max_index;
     __shared__ double delta_ij, limb_length_i, limb_length_j;
+    __shared__ double D_star_mat[32][2];
+    //double d_TD_arr[32];
     int n;
-    int i;
+    int i, j;
     double sum, min_d_star_row;
 
-    __shared__ double D_star_mat[32][2]; 
-    __shared__ double s_td_arr[32];
 
     //if(tid < num_taxa);
     //    s_td_arr[tid] = d_TD_arr[tid];
-    if(tid == 0)
+    if(tid == 0) {
         printf("Entered the GPU\n");
+
+       /*     
+        printf("-- Printing d_dist_mat for iteration 0 -- \n");
+        for(int p=0; p<num_taxa; p++){
+            printf(" row %d ", p);
+            for(int q=0; q<num_taxa; q++) {
+                printf("%lf ", d_dist_mat[p*num_taxa + q]);
+            }
+            printf(" \n");
+        }
+        */
+    }
+            
+
    
     // FIXME: OPT - can go down the column per thread
     // parallel sum possible 
@@ -180,13 +203,14 @@ __global__ void gpu_nj(int num_taxa, double* d_dist_mat, double* d_TD_arr, Node*
             if(d_dist_mat[tid] != -1) { // if first row has value != -1
                 sum=0;
                 for (int k = 0; k < num_taxa; k++) {
-                    if(d_dist_mat[k*num_taxa] != -1){
+                    if(d_dist_mat[k] != -1){
                         sum += d_dist_mat[tid*num_taxa + k];
                     }
                 }
-                s_td_arr[tid] = sum;
+                d_TD_arr[tid] = sum;
+                //printf("Updated d_TD_arr[%d] \n", tid);
             } else{
-                s_td_arr[tid] = -1;
+                d_TD_arr[tid] = -1;
             }
         }
         __syncthreads();
@@ -197,11 +221,11 @@ __global__ void gpu_nj(int num_taxa, double* d_dist_mat, double* d_TD_arr, Node*
         min_d_star_row = INT_MAX;
         
         if(tid < num_taxa) {
-            D_star_mat[tid][0] = INT_MAX;
-            if(d_dist_mat[tid*num_taxa] != -1) {
-                for (int j = tid + 1; j < num_taxa; j++) {
-                    if(d_dist_mat[j*num_taxa] != -1){
-                        min_d_star_row = (n - 2) * d_dist_mat[tid*num_taxa + j] - s_td_arr[tid] - s_td_arr[j];
+            D_star_mat[tid][0] = 10000;
+            if(d_dist_mat[tid] != -1) {
+                for (j = tid + 1; j < num_taxa; j++) {
+                    if(d_dist_mat[j] != -1){
+                        min_d_star_row = (n - 2) * d_dist_mat[tid*num_taxa + j] - d_TD_arr[tid] - d_TD_arr[j];
                         if (min_d_star_row < D_star_mat[tid][0]) {
                             D_star_mat[tid][0] = min_d_star_row;
                             D_star_mat[tid][1] = j;
@@ -210,19 +234,19 @@ __global__ void gpu_nj(int num_taxa, double* d_dist_mat, double* d_TD_arr, Node*
                         }
                     }
                 } else {
-                    D_star_mat[tid][0] = INT_MAX;
+                    D_star_mat[tid][0] = 10000;
                 }
             }
         __syncthreads();
 
         // find the index pair which has absolute min among the d_star
         if(tid == 0) {
-            min_d_star_row = INT_MAX;
-            for (int j = 0; j < num_taxa; j++) {
+            min_d_star_row = 10000;
+            for (j = 0; j < num_taxa; j++) {
                 if(D_star_mat[j][0] < min_d_star_row){
                     min_d_star_row = D_star_mat[j][0];
                     index1 = j;
-                    index2 = D_star_mat[tid][1];
+                    index2 = D_star_mat[j][1];
                 }
             }
         }
@@ -231,10 +255,12 @@ __global__ void gpu_nj(int num_taxa, double* d_dist_mat, double* d_TD_arr, Node*
         if(tid == 0) {
             min_index = (index1 < index2) ? index1 : index2;
             max_index = (index1 < index2) ? index2 : index1;
-            delta_ij = (s_td_arr[min_index] - s_td_arr[max_index]) / (n-2);
+            delta_ij = (d_TD_arr[min_index] - d_TD_arr[max_index]) / (n-2);
             limb_length_i = (d_dist_mat[min_index*num_taxa + max_index] + delta_ij)/2.0;
             limb_length_j = (d_dist_mat[min_index*num_taxa + max_index] - delta_ij)/2.0;
         }
+
+        __syncthreads();
 
 
         //updateDistanceMatrix(d_dist_mat,num_taxa, min_index, max_index);
@@ -243,6 +269,7 @@ __global__ void gpu_nj(int num_taxa, double* d_dist_mat, double* d_TD_arr, Node*
 
         if((tid < num_taxa) && (tid != min_index) && (tid != max_index)) {
             d_dist_mat[max_index*num_taxa + tid] = (d_dist_mat[min_index*num_taxa + tid] + d_dist_mat[max_index*num_taxa + tid] - d_dist_mat[min_index*num_taxa + max_index]) / 2;
+            //printf("Modified value of d_dist_mat[%d][%d] to %lf \n", max_index, tid, d_dist_mat[max_index*num_taxa + tid]);
             d_dist_mat[tid*num_taxa + max_index] = d_dist_mat[max_index*num_taxa + tid];
         }
 
@@ -253,25 +280,48 @@ __global__ void gpu_nj(int num_taxa, double* d_dist_mat, double* d_TD_arr, Node*
             d_dist_mat[min_index] = -1;
          
             d_temp_node->node_name      = i;
-            d_temp_node->leftChild      = nullptr;
-            d_temp_node->rightChild     = nullptr;
+            d_temp_node->leftChild      = d_nodes[min_index];
+            d_temp_node->rightChild     = d_nodes[max_index];
             d_temp_node->parent         = nullptr;
-            d_temp_node->distance_left  = -1;
-            d_temp_node->distance_right = -1;
+            d_temp_node->distance_left  = limb_length_i;
+            d_temp_node->distance_right = limb_length_j;
 
             // should not create a new node in GPU, rather just change the values of existing array
             d_nodes[max_index] = d_temp_node;
             d_nodes[min_index] = nullptr;
         }
         __syncthreads();
-    }
+        
+        //print the matrix
+        /*
+        if(tid == 0){
+            for(int p=0; p<num_taxa; p++) {
+                printf("%lf ",d_TD_arr[p]);
+            }
+            
+            printf(" \n");
+            printf("min_d_star is %lf for i=%d, j=%d\n", min_d_star_row, min_index, max_index);
+            printf("delta_ij = %lf, Li = %lf, Lj = %lf\n", delta_ij, limb_length_i, limb_length_j);
 
-    // Copying the TD_arr back to GPU global memory
+            printf("-- Printing d_dist_mat for iteration %d -- \n", i);
+            for(int p=0; p<num_taxa; p++){
+                printf(" row %d ", p);
+                for(int q=0; q<num_taxa; q++) {
+                    printf("%lf ", d_dist_mat[p*num_taxa + q]);
+                }
+                printf(" \n");
+            }
 
-    //if(tid < num_taxa);
-    //    d_TD_arr[tid] = s_td_arr[tid];
+        }
+        */
+    }        
+             
+    // Copyi ng the TD_arr back to GPU global memory
 
-    __syncthreads();
+    if(tid < num_taxa);
+        d_TD_arr[tid] = d_TD_arr[tid];
+
+    //__syncthreads();
 
 };
 
@@ -279,8 +329,8 @@ __global__ void gpu_nj(int num_taxa, double* d_dist_mat, double* d_TD_arr, Node*
 
 int main() {
     
-    //string filename = "./examples/evolution.in";
-    string filename = "./examples/INGI2368.in";
+    string filename = "./examples/evolution.in";
+    //string filename = "./examples/INGI2368.in";
     ifstream infile(filename);
     if (!infile) {
         cerr << "Error opening file" << endl;
@@ -319,7 +369,7 @@ int main() {
 
     printf("*** Copying to GPU memory ***\n");
     checkCudaError(cudaMemcpy(d_dist_mat, dist_mat, num_taxa*num_taxa*(sizeof(double)), cudaMemcpyHostToDevice));    
-    //cudaMemcpy(&d_TD_arr, &TD_arr, num_taxa*(sizeof(double)), cudaMemcpyHostToDevice);
+    cudaMemcpy(&d_TD_arr, &TD_arr, num_taxa*(sizeof(double)), cudaMemcpyHostToDevice);
     //cudaMemcpy(&d_nodes, &nodes, num_taxa*(sizeof(Node)), cudaMemcpyHostToDevice);
     printf("*** Copying to GPU memory complete ***\n\n");
 
@@ -335,7 +385,7 @@ int main() {
     printf("### \n Elapsed Time %" PRId64 "\n###\n", duration.count());
    
  
-    checkCudaError(cudaGetLastError());
+    //checkCudaError(cudaGetLastError());
     printf("***  GPU computation complete ***\n");
 
     checkCudaError(cudaMemcpy(dist_mat, d_dist_mat, num_taxa*num_taxa*sizeof(double), cudaMemcpyDeviceToHost));
@@ -377,6 +427,11 @@ int main() {
     outfile.close();
 
     //FIXME:free the gpu memory and all variables
+
+    cudaFree(d_dist_mat);
+    cudaFree(d_TD_arr);
+    cudaFree(d_nodes);
+    cudaFree(d_temp_node);
 
     return 0;
 }
