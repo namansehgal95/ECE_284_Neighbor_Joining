@@ -177,12 +177,14 @@ __global__ void gpu_nj(int num_taxa, double* d_dist_mat, double* d_TD_arr, Node*
     __shared__ double limb_length_i;
     __shared__ double limb_length_j;
     //__shared__ double min_D_star_mat[TILE_WIDTH][2];
+    __shared__ int col_active[TILE_WIDTH];
     __shared__ int row_active[TILE_WIDTH];
     __shared__ double sum_tile[TILE_WIDTH][TILE_WIDTH];
     //double d_TD_arr[32];
+    __shared__ double min_row_mat[2][TILE_WIDTH][TILE_WIDTH];
     int n;
     int i, j;
-    double sum, min_d_star_row;
+    double min_d_star_row;
 
 
 
@@ -198,27 +200,34 @@ __global__ void gpu_nj(int num_taxa, double* d_dist_mat, double* d_TD_arr, Node*
         // initialize sum to 0
         
         sum_tile[t_row_z][t_col_og] = 0;
+
+        if(t_col_og == 0){
+            row_active[t_row_z] = -1;
+            if(d_dist_mat[t_row] != -1 && t_row < num_taxa){
+                row_active[t_row_z] = 1;
+            }
+        }
         __syncthreads();
         
         // loop needed to iterate over the columns of dist_mat
         for(col_tile_iter = 0; col_tile_iter < gridDim.x; col_tile_iter++) {
             t_col = t_col_og + col_tile_iter*TILE_WIDTH;
-            // load which row/col is active amongst the current TILE_WIDTH
+            // load which col is active amongst the current TILE_WIDTH
             if(t_row_z == 0) {
-                row_active[t_col_og] = -1;
+                col_active[t_col_og] = -1;
                 if(d_dist_mat[t_col] != -1 && t_col < num_taxa){
-                    row_active[t_col_og] = 1;
+                    col_active[t_col_og] = 1;
                 }
             }
             __syncthreads();
             // find the sum corresponding to current TILE_WIDTH
-            if(row_active[t_col_og] == 1 && t_row < num_taxa){
+            if(col_active[t_col_og] == 1 && t_row < num_taxa && row_active[t_row_z] == 1){
                 sum_tile[t_row_z][t_col_og] += d_dist_mat[t_row*num_taxa + t_col];
                 //printf("row %d of sum_tile added\n", t_row_z);
             }
         }
         __syncthreads();
-//
+
 //if(t_row == 0 && t_col_og == 0) {
 //    printf("Printing sum_tile_Arr\n");
 //    for(int dbg = 0; dbg < TILE_WIDTH; dbg++){
@@ -229,9 +238,16 @@ __global__ void gpu_nj(int num_taxa, double* d_dist_mat, double* d_TD_arr, Node*
 //    }
 //    printf("\n");
 //}
-//
+
 //if(t_row == 0 && t_col == 0) {
-//    printf("Printing active_Arr\n");
+//    printf("Printing col_active\n");
+//    for(int dbg = 0; dbg < TILE_WIDTH; dbg++){
+//        printf("%d ", col_active[dbg]);
+//    }
+//    printf("\n");
+//}
+//if(t_row == 0 && t_col == 0) {
+//    printf("Printing row_active\n");
 //    for(int dbg = 0; dbg < TILE_WIDTH; dbg++){
 //        printf("%d ", row_active[dbg]);
 //    }
@@ -252,7 +268,7 @@ __global__ void gpu_nj(int num_taxa, double* d_dist_mat, double* d_TD_arr, Node*
         }
         
         if(t_col_og == 0){
-            if(row_active[t_row_z] == 1){
+            if(col_active[t_row_z] == 1){
                 d_TD_arr[t_row] = sum_tile[t_row_z][0];
             }
             else {
@@ -280,18 +296,50 @@ __global__ void gpu_nj(int num_taxa, double* d_dist_mat, double* d_TD_arr, Node*
         __syncthreads();
 
         // DEBUG print the TD_arr
-/*        
-if(t_row == 0 && t_col == 0) {
-    printf("Printing TD_Arr\n");
-    for(int dbg = 0; dbg < num_taxa; dbg++){
-        printf("%lf ", d_TD_arr[dbg]);
-    }
-    printf("\n");
-}
-__syncthreads();        
-*/
+
+//if(t_row == 0 && t_col == 0) {
+//    printf("Printing TD_Arr\n");
+//    for(int dbg = 0; dbg < num_taxa; dbg++){
+//        printf("%lf ", d_TD_arr[dbg]);
+//    }
+//    printf("\n");
+//}
+//__syncthreads();        
 
 
+
+
+        /*
+        // initialize min_row_mat with INT_MAX
+        min_row_mat[0][t_row_z][t_col_og] = INT_MAX;
+        min_row_mat[1][t_row_z][t_col_og] = t_col_og;
+        __syncthreads();
+
+        // for each tile iterate and find the min of the D_star similar to sum
+        
+        for(col_tile_iter = 0; col_tile_iter < gridDim.x; col_tile_iter++) {
+            t_col = t_col_og + col_tile_iter*TILE_WIDTH;
+            // load which col is active amongst the current TILE_WIDTH
+            if(t_row_z == 0) {
+                col_active[t_col_og] = -1;
+                if(d_dist_mat[t_col] != -1 && t_col < num_taxa){
+                    col_active[t_col_og] = 1;
+                }
+            }
+            __syncthreads();
+            if(col_active[t_col_og] == 1 && t_row < num_taxa){
+
+            }
+
+        }
+        */
+
+
+
+
+
+
+        
         //find_closest_pair(d_dist_mat,num_taxa, TD_arr, index1, index2);
         // GPU code for find_closest_pair
         min_d_star_row = INT_MAX;
@@ -326,6 +374,9 @@ __syncthreads();
                 }
             }
         }
+        
+
+
 
 
         if(tid == 0) {
