@@ -17,6 +17,7 @@
 
 using namespace std;
 using namespace std::chrono;
+#define TILE_WIDTH 16
 
 const int MAX_TAXA = 100;
 
@@ -157,63 +158,138 @@ __global__ void gpu_nj(int num_taxa, double* d_dist_mat, double* d_TD_arr, Node*
     */ 
 
     int tid = blockIdx.x*blockDim.x + threadIdx.x;
+    int t_row = blockIdx.x*blockDim.x + threadIdx.y;
+    int t_row_z = threadIdx.y;
+    int t_col_og = threadIdx.x;
+    int t_col = t_col_og;
     //int t_row = tid / num_taxa;
     //int t_col = tid % num_taxa;
     //__shared__ int index1, index2;
     //__shared__ int min_index, max_index;
     //__shared__ double delta_ij, limb_length_i, limb_length_j;
-    //__shared__ double D_star_mat[32][2]; 
+    __shared__ double D_star_mat[32][2]; 
     //__shared__ double s_td_arr[32];
 
     int index1, index2;
-    __shared__ int min_index, max_index;
-    __shared__ double delta_ij, limb_length_i, limb_length_j;
-    __shared__ double D_star_mat[32][2];
+    __shared__ int min_index;
+    __shared__ int max_index;
+    __shared__ double delta_ij;
+    __shared__ double limb_length_i;
+    __shared__ double limb_length_j;
+    //__shared__ double min_D_star_mat[TILE_WIDTH][2];
+    __shared__ int row_active[TILE_WIDTH];
+    __shared__ double sum_tile[TILE_WIDTH][TILE_WIDTH];
     //double d_TD_arr[32];
     int n;
     int i, j;
     double sum, min_d_star_row;
 
 
-    //if(tid < num_taxa);
-    //    s_td_arr[tid] = d_TD_arr[tid];
-    if(tid == 0) {
-        printf("Entered the GPU\n");
 
-       /*     
-        printf("-- Printing d_dist_mat for iteration 0 -- \n");
-        for(int p=0; p<num_taxa; p++){
-            printf(" row %d ", p);
-            for(int q=0; q<num_taxa; q++) {
-                printf("%lf ", d_dist_mat[p*num_taxa + q]);
-            }
-            printf(" \n");
-        }
-        */
-    }
             
-
+    int col_tile_iter;
+    int par_sum_iter = TILE_WIDTH / 2;
    
     // FIXME: OPT - can go down the column per thread
     // parallel sum possible 
     for(i=0 ; i<num_taxa-2; i++) {
         n = num_taxa - i;
-        // GPU implementation of totalDistance
-        if(tid < num_taxa) {
-            if(d_dist_mat[tid] != -1) { // if first row has value != -1
-                sum=0;
-                for (int k = 0; k < num_taxa; k++) {
-                    if(d_dist_mat[k] != -1){
-                        sum += d_dist_mat[tid*num_taxa + k];
-                    }
+
+        // initialize sum to 0
+        
+        sum_tile[t_row_z][t_col_og] = 0;
+        __syncthreads();
+        
+        // loop needed to iterate over the columns of dist_mat
+        for(col_tile_iter = 0; col_tile_iter < gridDim.x; col_tile_iter++) {
+            t_col = t_col_og + col_tile_iter*TILE_WIDTH;
+            // load which row/col is active amongst the current TILE_WIDTH
+            if(t_row_z == 0) {
+                row_active[t_col_og] = -1;
+                if(d_dist_mat[t_col] != -1 && t_col < num_taxa){
+                    row_active[t_col_og] = 1;
                 }
-                d_TD_arr[tid] = sum;
-                //printf("Updated d_TD_arr[%d] \n", tid);
-            } else{
-                d_TD_arr[tid] = -1;
+            }
+            __syncthreads();
+            // find the sum corresponding to current TILE_WIDTH
+            if(row_active[t_col_og] == 1 && t_row < num_taxa){
+                sum_tile[t_row_z][t_col_og] += d_dist_mat[t_row*num_taxa + t_col];
+                //printf("row %d of sum_tile added\n", t_row_z);
             }
         }
         __syncthreads();
+//
+//if(t_row == 0 && t_col_og == 0) {
+//    printf("Printing sum_tile_Arr\n");
+//    for(int dbg = 0; dbg < TILE_WIDTH; dbg++){
+//        for(int dbg2 = 0; dbg2 < TILE_WIDTH; dbg2++){
+//            printf("%lf ", sum_tile[dbg][dbg2]);
+//        }
+//        printf("\n");
+//    }
+//    printf("\n");
+//}
+//
+//if(t_row == 0 && t_col == 0) {
+//    printf("Printing active_Arr\n");
+//    for(int dbg = 0; dbg < TILE_WIDTH; dbg++){
+//        printf("%d ", row_active[dbg]);
+//    }
+//    printf("\n");
+//}
+//__syncthreads();
+
+        
+        // now find the sum of that row of the memory with parallel sum
+        /*
+        while (par_sum_iter > 0) {
+            if(t_col_og < par_sum_iter){
+                sum_tile[t_row_z][t_col_og] += sum_tile[t_row_z][t_col_og + par_sum_iter];
+                //printf("par_sum_iter = %d\n", par_sum_iter);
+            }
+            __syncthreads();
+            par_sum_iter = par_sum_iter / 2;
+        }
+        
+        if(t_col_og == 0){
+            if(row_active[t_row_z] == 1){
+                d_TD_arr[t_row] = sum_tile[t_row_z][0];
+            }
+            else {
+                d_TD_arr[t_row] = -1;
+            }
+        }
+        */
+        
+    
+        // store the calculated sum to d_TD_arr
+        
+        if(t_col_og == 0){
+            for(par_sum_iter = 1; par_sum_iter < TILE_WIDTH; par_sum_iter++){
+                sum_tile[t_row_z][0] += sum_tile[t_row_z][t_col_og + par_sum_iter];
+            }
+            if(row_active[t_row_z] == 1){
+                d_TD_arr[t_row] = sum_tile[t_row_z][0];
+            }
+            else {
+                d_TD_arr[t_row] = -1;
+            }
+        }
+        
+//        }
+        __syncthreads();
+
+        // DEBUG print the TD_arr
+/*        
+if(t_row == 0 && t_col == 0) {
+    printf("Printing TD_Arr\n");
+    for(int dbg = 0; dbg < num_taxa; dbg++){
+        printf("%lf ", d_TD_arr[dbg]);
+    }
+    printf("\n");
+}
+__syncthreads();        
+*/
 
 
         //find_closest_pair(d_dist_mat,num_taxa, TD_arr, index1, index2);
@@ -221,7 +297,7 @@ __global__ void gpu_nj(int num_taxa, double* d_dist_mat, double* d_TD_arr, Node*
         min_d_star_row = INT_MAX;
         
         if(tid < num_taxa) {
-            D_star_mat[tid][0] = 10000;
+            D_star_mat[tid][0] = INT_MAX;
             if(d_dist_mat[tid] != -1) {
                 for (j = tid + 1; j < num_taxa; j++) {
                     if(d_dist_mat[j] != -1){
@@ -234,14 +310,14 @@ __global__ void gpu_nj(int num_taxa, double* d_dist_mat, double* d_TD_arr, Node*
                         }
                     }
                 } else {
-                    D_star_mat[tid][0] = 10000;
+                    D_star_mat[tid][0] = INT_MAX;
                 }
             }
         __syncthreads();
 
         // find the index pair which has absolute min among the d_star
         if(tid == 0) {
-            min_d_star_row = 10000;
+            min_d_star_row = INT_MAX;
             for (j = 0; j < num_taxa; j++) {
                 if(D_star_mat[j][0] < min_d_star_row){
                     min_d_star_row = D_star_mat[j][0];
@@ -329,8 +405,8 @@ __global__ void gpu_nj(int num_taxa, double* d_dist_mat, double* d_TD_arr, Node*
 
 int main() {
     
-    string filename = "./examples/evolution.in";
-    //string filename = "./examples/INGI2368.in";
+    //string filename = "./examples/evolution.in";
+    string filename = "./examples/INGI2368.in";
     ifstream infile(filename);
     if (!infile) {
         cerr << "Error opening file" << endl;
@@ -374,9 +450,12 @@ int main() {
     printf("*** Copying to GPU memory complete ***\n\n");
 
     // Parallelize GPU set grid, block and call kernel
-    int blocksize = 32;
-    int gridsize = (num_taxa + 31) / 32;
+    dim3 blocksize(TILE_WIDTH,TILE_WIDTH);
+    dim3 gridsize((num_taxa + TILE_WIDTH - 1) / TILE_WIDTH);
    
+    //printf("Launching kernel with griddim: %d, %d, %d\n", gridDim.x, gridDim.y, gridDim.z);
+    //printf("Launching kernel with blockDim: %d, %d, %d\n", blockDim.x, blockDim.y, blockDim.z);
+    
     auto start_time = high_resolution_clock::now(); 
     gpu_nj<<<gridsize, blocksize>>>(num_taxa, d_dist_mat, d_TD_arr, d_nodes, d_temp_node);
     cudaDeviceSynchronize();    
