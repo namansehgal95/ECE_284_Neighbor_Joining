@@ -18,7 +18,7 @@
 using namespace std;
 using namespace std::chrono;
 
-const int MAX_TAXA = 100;
+const int MAX_TAXA = 500;
 
 class Node {
     public:
@@ -54,7 +54,6 @@ class Node {
 int readFromFile(double arr[MAX_TAXA][MAX_TAXA], char seq[MAX_TAXA], string filename, Node* nodes[MAX_TAXA]) {
     cout<<filename<<endl;
     ifstream infile(filename);
-
     if (!infile) {
         cerr << "Error opening file" << endl;
         exit(1);
@@ -69,7 +68,6 @@ int readFromFile(double arr[MAX_TAXA][MAX_TAXA], char seq[MAX_TAXA], string file
             arr[i][j] = 0;
         }
     }
-
     string s;
     while (!infile.eof() && numRows < num_taxa) {
         numCols = 0;
@@ -84,7 +82,6 @@ int readFromFile(double arr[MAX_TAXA][MAX_TAXA], char seq[MAX_TAXA], string file
         infile.ignore(); // ignore newline character
         numRows++;
     }
-
     infile.close();
     return num_taxa;
 }
@@ -178,7 +175,6 @@ void find_closest_pair(double arr[MAX_TAXA][MAX_TAXA], int num_taxa, int n, doub
         }
     }
     //return min_distance / (num_taxa - 2);
-    //printf("min_d_star is %lf, for i=%d, j=%d\n", min_distance, index1, index2);
 }
 
 //Pending
@@ -194,14 +190,14 @@ void updateDistanceMatrix(double arr[MAX_TAXA][MAX_TAXA], int num_taxa, int min_
 
 int main() {
     
-    string file_name = "./examples/evolution.in";
-    //string file_name = "./examples/INGI2368.in";
+    //string file_name = "./examples/evolution.in";
+    string file_name = "./examples/IN500.in";
     double arr[MAX_TAXA][MAX_TAXA];
     char seq[MAX_TAXA];
     Node* nodes[MAX_TAXA];
     //int num_taxa = read_DM_file(arr, seq, file_name, nodes);
     int num_taxa = readFromFile(arr, seq, file_name, nodes);
-    printDistanceMatrix(arr, num_taxa, nodes);
+    //printDistanceMatrix(arr, num_taxa, nodes);
 
     double TD_arr[MAX_TAXA];
     auto start_time = high_resolution_clock::now();
@@ -213,7 +209,7 @@ int main() {
         int n = num_taxa - i;
         //getRandomIndexes(index1, index2, n);
         totalDistance(arr, num_taxa, TD_arr);
-        printTDMatrix(TD_arr, num_taxa);
+        //printTDMatrix(TD_arr, num_taxa);
         find_closest_pair(arr,num_taxa, n, TD_arr, index1, index2);
         //}
         
@@ -228,7 +224,6 @@ int main() {
         Node* temp = new Node(new_node_name, nodes[min_index], nodes[max_index], limb_length_i, limb_length_j );
         nodes[max_index] = temp;
         nodes[min_index] = nullptr;
-        //printf("delta_ij = %lf, Li = %lf, Lj = %lf\n", delta_ij, limb_length_i, limb_length_j);
         //printDistanceMatrix(arr, num_taxa, nodes);
     }
     
