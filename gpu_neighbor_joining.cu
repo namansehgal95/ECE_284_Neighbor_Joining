@@ -151,7 +151,7 @@ void traverseAndWrite(Node* node, ofstream& outfile) {
 
 
 
-__global__ void gpu_nj(int num_taxa, double* d_dist_mat, double* d_TD_arr, Node** d_nodes, Node* d_temp_node){
+__global__ void gpu_nj(int num_taxa, double* d_dist_mat, double* d_TD_arr, double* d_TB_min, Node** d_nodes, Node* d_temp_node){
 
     /*
         Device variables needed - dist_mat, TD_arr
@@ -221,7 +221,7 @@ __global__ void gpu_nj(int num_taxa, double* d_dist_mat, double* d_TD_arr, Node*
             }
             __syncthreads();
             // find the sum corresponding to current TILE_WIDTH
-            if(col_active[t_col_og] == 1 && t_row < num_taxa && row_active[t_row_z] == 1){
+            if(col_active[t_col_og] == 1  && row_active[t_row_z] == 1){
                 sum_tile[t_row_z][t_col_og] += d_dist_mat[t_row*num_taxa + t_col];
                 //printf("row %d of sum_tile added\n", t_row_z);
             }
@@ -309,10 +309,14 @@ __global__ void gpu_nj(int num_taxa, double* d_dist_mat, double* d_TD_arr, Node*
 
 
 
-        /*
+        
         // initialize min_row_mat with INT_MAX
         min_row_mat[0][t_row_z][t_col_og] = INT_MAX;
         min_row_mat[1][t_row_z][t_col_og] = t_col_og;
+
+        double curr_value, calc_value, curr_index;
+        curr_value = INT_MAX;
+        curr_index = t_col_og;
         __syncthreads();
 
         // for each tile iterate and find the min of the D_star similar to sum
@@ -327,29 +331,82 @@ __global__ void gpu_nj(int num_taxa, double* d_dist_mat, double* d_TD_arr, Node*
                 }
             }
             __syncthreads();
-            if(col_active[t_col_og] == 1 && t_row < num_taxa){
-
+            //  find the min of current and iter 
+            if(col_active[t_col_og] == 1 && row_active[t_row_z] == 1){
+                // calculate the D_star value for the elem
+                // compare with the existing min
+                // replace if less
+                calc_value = (n - 2) * d_dist_mat[t_row*num_taxa + t_col] - d_TD_arr[t_row] - d_TD_arr[t_col];
+                if(calc_value < curr_value){
+                    curr_value = calc_value;
+                    curr_index = t_col;
+                }
             }
-
         }
-        */
-
-
-
-
-
-
+        // store the curr_index and curr_value
+        min_row_mat[0][t_row_z][t_col_og] = curr_value;
+        min_row_mat[1][t_row_z][t_col_og] = curr_index;
+        __syncthreads();
         
-        //find_closest_pair(d_dist_mat,num_taxa, TD_arr, index1, index2);
-        // GPU code for find_closest_pair
-        min_d_star_row = INT_MAX;
-        
-        if(tid < num_taxa) {
-            D_star_mat[tid][0] = INT_MAX;
-            if(d_dist_mat[tid] != -1) {
-                for (j = tid + 1; j < num_taxa; j++) {
-                    if(d_dist_mat[j] != -1){
-                        min_d_star_row = (n - 2) * d_dist_mat[tid*num_taxa + j] - d_TD_arr[tid] - d_TD_arr[j];
+        int min_iter;
+        // find the min of the row and its index
+        if(t_col_og == 0 && row_active[t_row_z] == 1){
+            for(min_iter = 1; min_iter < TILE_WIDTH; min_iter++){
+                if(min_row_mat[0][t_row_z][min_iter] < curr_value) {
+                   curr_value = min_row_mat[0][t_row_z][min_iter];
+                   curr_index = min_row_mat[1][t_row_z][min_iter];
+                }
+            }
+            min_row_mat[0][t_row_z][0] = curr_value;
+            min_row_mat[1][t_row_z][0] = curr_index;
+        }
+        __syncthreads();
+        // PRINT THE MIN_ROW_MAT[0] values                
+
+        // find the min of all rows and the index pair
+        if(t_row_z == 0 && t_col_og == 0){
+            for(min_iter = 0; min_iter < TILE_WIDTH; min_iter++){
+                if(min_row_mat[0][min_iter][0] < curr_value){
+                    curr_value = min_row_mat[0][min_iter][0];
+                    curr_index = min_row_mat[1][min_iter][1];
+                }
+            }
+            d_TB_min[blockIdx.x] = curr_value;
+            d_TB_min[gridDim.x + blockIdx.x] = t_row; // row
+            d_TB_min[2*gridDim.x + blockIdx.x] = curr_index; // col
+        }
+        __syncthreads();
+                        
+        // reduce the d_TB_min
+        if(t_row == 0 && t_col_og == 0){
+            curr_value = d_TB_min[0];
+            index1 = d_TB_min[gridDim.x];
+            index2 = d_TB_min[2*gridDim.x];
+            for(min_iter = 1; min_iter < gridDim.x; min_iter++){
+                if(d_TB_min[min_iter] < curr_value){
+                    curr_value = d_TB_min[min_iter];
+                    index1 = d_TB_min[gridDim.x + min_iter];
+                    index2 = d_TB_min[2*gridDim.x + min_iter];
+                }
+            }
+        }
+                                     
+                                     
+                                     
+                                     
+                                     
+                                     
+        /*                           
+        //find_closest_pair(d        _dist_mat,num_taxa, TD_arr, index1, index2);
+        // GPU code for find_        closest_pair
+        min_d_star_row = INT_        MAX;
+                                     
+        if(tid < num_taxa) {         
+            D_star_mat[tid][0        ] = INT_MAX;
+            if(d_dist_mat[tid        ] != -1) {
+                for (j = tid         + 1; j < num_taxa; j++) {
+                    if(d_dist        _mat[j] != -1){
+                        min_d        _star_row = (n - 2) * d_dist_mat[tid*num_taxa + j] - d_TD_arr[tid] - d_TD_arr[j];
                         if (min_d_star_row < D_star_mat[tid][0]) {
                             D_star_mat[tid][0] = min_d_star_row;
                             D_star_mat[tid][1] = j;
@@ -362,6 +419,7 @@ __global__ void gpu_nj(int num_taxa, double* d_dist_mat, double* d_TD_arr, Node*
                 }
             }
         __syncthreads();
+        
 
         // find the index pair which has absolute min among the d_star
         if(tid == 0) {
@@ -374,7 +432,7 @@ __global__ void gpu_nj(int num_taxa, double* d_dist_mat, double* d_TD_arr, Node*
                 }
             }
         }
-        
+        */
 
 
 
@@ -481,6 +539,8 @@ int main() {
     //int n;
     double TD_arr[num_taxa];
     double* d_TD_arr;
+    double* d_TB_min;
+    int num_TB = (num_taxa + TILE_WIDTH - 1) / TILE_WIDTH;
 
     // allocate memory and copy the variables to GPU, 
     // launch kernel
@@ -490,13 +550,15 @@ int main() {
     printf("*** Allocating GPU memory ***\n");
     cudaMalloc((void**)(&d_dist_mat), num_taxa*num_taxa*(sizeof(double)));
     cudaMalloc((void**)(&d_TD_arr), num_taxa*(sizeof(double)));
+    cudaMalloc((void**)(&d_TB_min), 3*num_TB*(sizeof(double)));
     cudaMalloc((void**)(&d_nodes), num_taxa*(sizeof(Node)));
     cudaMalloc((void**)(&d_temp_node), sizeof(Node));
     printf("*** Allocating GPU memory complete ***\n\n");
 
     printf("*** Copying to GPU memory ***\n");
     checkCudaError(cudaMemcpy(d_dist_mat, dist_mat, num_taxa*num_taxa*(sizeof(double)), cudaMemcpyHostToDevice));    
-    cudaMemcpy(&d_TD_arr, &TD_arr, num_taxa*(sizeof(double)), cudaMemcpyHostToDevice);
+    //cudaMemcpy(&d_TD_arr, &TD_arr, num_taxa*(sizeof(double)), cudaMemcpyHostToDevice);
+    //cudaMemcpy(&d_TB_min, &d_TB_min, 3*num_TB*(sizeof(double)), cudaMemcpyHostToDevice);
     //cudaMemcpy(&d_nodes, &nodes, num_taxa*(sizeof(Node)), cudaMemcpyHostToDevice);
     printf("*** Copying to GPU memory complete ***\n\n");
 
@@ -508,7 +570,7 @@ int main() {
     //printf("Launching kernel with blockDim: %d, %d, %d\n", blockDim.x, blockDim.y, blockDim.z);
     
     auto start_time = high_resolution_clock::now(); 
-    gpu_nj<<<gridsize, blocksize>>>(num_taxa, d_dist_mat, d_TD_arr, d_nodes, d_temp_node);
+    gpu_nj<<<gridsize, blocksize>>>(num_taxa, d_dist_mat, d_TD_arr, d_TB_min,  d_nodes, d_temp_node);
     cudaDeviceSynchronize();    
     auto end_time = high_resolution_clock::now();
     auto duration = duration_cast<microseconds>(end_time - start_time);
@@ -560,6 +622,7 @@ int main() {
 
     cudaFree(d_dist_mat);
     cudaFree(d_TD_arr);
+    cudaFree(d_TB_min);
     cudaFree(d_nodes);
     cudaFree(d_temp_node);
 
