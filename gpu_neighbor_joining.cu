@@ -295,15 +295,15 @@ __global__ void gpu_nj(int num_taxa, double* d_dist_mat, double* d_TD_arr, doubl
         __syncthreads();
 
         // DEBUG print the TD_arr
-
-if(t_row == 0 && t_col == 0) {
-    printf("Printing TD_Arr\n");
-    for(int dbg = 0; dbg < num_taxa; dbg++){
-        printf("%lf ", d_TD_arr[dbg]);
-    }
-    printf("\n");
-}
-__syncthreads();        
+//
+//if(t_row == 0 && t_col == 0) {
+//    printf("Printing TD_Arr\n");
+//    for(int dbg = 0; dbg < num_taxa; dbg++){
+//        printf("%lf ", d_TD_arr[dbg]);
+//    }
+//    printf("\n");
+//}
+//__syncthreads();        
 
 
 
@@ -374,24 +374,24 @@ __syncthreads();
         }
         __syncthreads();
         // PRINT THE MIN_ROW_MAT[0] values
-
-if(t_row == 0 && t_col == 0) {
-    printf("printing d_dist_mat\n");
-    for(int dbg1 = 0; dbg1 < num_taxa; dbg1++){
-       for(int dbg2 = 0; dbg2 < num_taxa; dbg2++) {
-            printf("%lf ", d_dist_mat[dbg1*num_taxa + dbg2]);
-        }
-        printf("\n");
-    }
-}
-__syncthreads();
-if(t_row == 0 && t_col == 0) {
-    printf("printing min_row values\n");
-    for(int dbg = 0; dbg < TILE_WIDTH; dbg++){
-       printf("row: %d, min_row = %lf index = %lf \n", dbg, min_row_mat[0][dbg][0], min_row_mat[1][dbg][0]); 
-    }
-}
-__syncthreads();
+//
+//if(t_row == 0 && t_col == 0) {
+//    printf("printing d_dist_mat\n");
+//    for(int dbg1 = 0; dbg1 < num_taxa; dbg1++){
+//       for(int dbg2 = 0; dbg2 < num_taxa; dbg2++) {
+//            printf("%lf ", d_dist_mat[dbg1*num_taxa + dbg2]);
+//        }
+//        printf("\n");
+//    }
+//}
+//__syncthreads();
+//if(t_row == 0 && t_col == 0) {
+//    printf("printing min_row values\n");
+//    for(int dbg = 0; dbg < TILE_WIDTH; dbg++){
+//       printf("row: %d, min_row = %lf index = %lf \n", dbg, min_row_mat[0][dbg][0], min_row_mat[1][dbg][0]); 
+//    }
+//}
+//__syncthreads();
 
         double min_row_index, min_col_index;
         // find the min of all rows and the index pair
@@ -409,7 +409,7 @@ __syncthreads();
             d_TB_min[blockIdx.x] = curr_value;
             d_TB_min[gridDim.x + blockIdx.x] = min_row_index; // row
             d_TB_min[2*gridDim.x + blockIdx.x] = min_col_index; // col
-            printf("d_TB_min = %lf, min_row_index = %lf, min_col_index = %lf\n", curr_value, min_row_index, min_col_index);
+            //printf("d_TB_min = %lf, min_row_index = %lf, min_col_index = %lf\n", curr_value, min_row_index, min_col_index);
         }
         __syncthreads();
                         
@@ -428,10 +428,10 @@ __syncthreads();
         }
         __syncthreads();
 
-if(t_row == 0 && t_col_og == 0){
-    printf(" min_value = %lf, index1 = %d, index2 = %d\n", curr_value, index1, index2);
-}
-__syncthreads();                        
+//if(t_row == 0 && t_col_og == 0){
+//    printf(" min_value = %lf, index1 = %d, index2 = %d\n", curr_value, index1, index2);
+//}
+//__syncthreads();                        
                                      
                                      
                                      
@@ -499,25 +499,17 @@ __syncthreads();
         }
         __syncthreads();
 
-
-if(t_row == 0 && t_col == 0) {
-    printf("printing d_dist_mat\n");
-    for(int dbg1 = 0; dbg1 < num_taxa; dbg1++){
-       for(int dbg2 = 0; dbg2 < num_taxa; dbg2++) {
-            printf("%lf ", d_dist_mat[dbg1*num_taxa + dbg2]);
-        }
-        printf("\n");
-    }
-}
-__syncthreads();
-
-        /*
-        if((tid < num_taxa) && (tid != min_index) && (tid != max_index)) {
-            d_dist_mat[max_index*num_taxa + tid] = (d_dist_mat[min_index*num_taxa + tid] + d_dist_mat[max_index*num_taxa + tid] - d_dist_mat[min_index*num_taxa + max_index]) / 2;
-            //printf("Modified value of d_dist_mat[%d][%d] to %lf \n", max_index, tid, d_dist_mat[max_index*num_taxa + tid]);
-            d_dist_mat[tid*num_taxa + max_index] = d_dist_mat[max_index*num_taxa + tid];
-        }
-        */
+//
+//if(t_row == 0 && t_col == 0) {
+//    printf("printing d_dist_mat\n");
+//    for(int dbg1 = 0; dbg1 < num_taxa; dbg1++){
+//       for(int dbg2 = 0; dbg2 < num_taxa; dbg2++) {
+//            printf("%lf ", d_dist_mat[dbg1*num_taxa + dbg2]);
+//        }
+//        printf("\n");
+//    }
+//}
+//__syncthreads();
 
 
         // turn min_index to -1,
