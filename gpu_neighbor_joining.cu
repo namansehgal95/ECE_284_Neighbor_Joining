@@ -151,7 +151,7 @@ void traverseAndWrite(Node* node, ofstream& outfile) {
 
 
 
-__global__ void gpu_nj(int num_taxa, double* d_dist_mat, double* d_TD_arr, double* d_TB_min, Node** d_nodes, Node* d_temp_node){
+__global__ void gpu_nj(int num_taxa, double* d_dist_mat, double* d_TD_arr, double* d_TB_min, Node** d_nodes, Node* d_temp_node, double* d_index1, double* d_index2){
 
     /*
         Device variables needed - dist_mat, TD_arr
@@ -425,7 +425,7 @@ __syncthreads();
                     index2 = d_TB_min[2*gridDim.x + min_iter];
                 }
             }
-        }
+        }        
         __syncthreads();
 
 //if(t_row == 0 && t_col_og == 0){
@@ -483,21 +483,34 @@ __syncthreads();
             delta_ij = (d_TD_arr[min_index] - d_TD_arr[max_index]) / (n-2);
             limb_length_i = (d_dist_mat[min_index*num_taxa + max_index] + delta_ij)/2.0;
             limb_length_j = (d_dist_mat[min_index*num_taxa + max_index] - delta_ij)/2.0;
+            *d_index1 = min_index;
+            *d_index2 = max_index;
         }
 
         __syncthreads();
 
+        min_index = *d_index1;
+        max_index = *d_index2;
 
         //updateDistanceMatrix(d_dist_mat,num_taxa, min_index, max_index);
 
         // update the distance matrix parallely with new values at max index
+        t_col = t_row;
+    
+        if(t_col_og == 0 && t_row != min_index && t_row != max_index && t_row < num_taxa){
+            d_dist_mat[t_row*num_taxa + max_index] = (d_dist_mat[t_row*num_taxa + min_index] + d_dist_mat[t_row*num_taxa + max_index] - d_dist_mat[min_index*num_taxa + max_index]) / 2;
+            d_dist_mat[max_index*num_taxa + t_row] = d_dist_mat[t_row*num_taxa + max_index];
+        }
+        __syncthreads();
 
+        /*
         if(t_row == 0 && t_col_og != min_index && t_col_og != max_index && t_col_og < num_taxa){
-            d_dist_mat[max_index*num_taxa + t_col_og] = (d_dist_mat[min_index*num_taxa + t_col_og] + d_dist_mat[max_index*num_taxa + t_col_og] - d_dist_mat[min_index*num_taxa + max_index]) / 2;
+            d_dist_mat[max_index*num_taxa + t_col] = (d_dist_mat[min_index*num_taxa + t_col_og] + d_dist_mat[max_index*num_taxa + t_col_og] - d_dist_mat[min_index*num_taxa + max_index]) / 2;
             d_dist_mat[t_col_og*num_taxa + max_index] = d_dist_mat[max_index*num_taxa + t_col_og];
             //printf("matrix value %d and %d updated \n", t_row, t_col);
         }
         __syncthreads();
+        */
 
 //
 //if(t_row == 0 && t_col == 0) {
@@ -513,7 +526,7 @@ __syncthreads();
 
 
         // turn min_index to -1,
-        if(tid == 0){
+        if(t_row == 0 && t_col_og == 0){
             d_dist_mat[min_index*num_taxa] = -1;
             d_dist_mat[min_index] = -1;
          
@@ -593,6 +606,8 @@ int main() {
     double TD_arr[num_taxa];
     double* d_TD_arr;
     double* d_TB_min;
+    double* d_index1;
+    double* d_index2;
     int num_TB = (num_taxa + TILE_WIDTH - 1) / TILE_WIDTH;
 
     // allocate memory and copy the variables to GPU, 
@@ -604,6 +619,8 @@ int main() {
     cudaMalloc((void**)(&d_dist_mat), num_taxa*num_taxa*(sizeof(double)));
     cudaMalloc((void**)(&d_TD_arr), num_taxa*(sizeof(double)));
     cudaMalloc((void**)(&d_TB_min), 3*num_TB*(sizeof(double)));
+    cudaMalloc((void**)(&d_index1), sizeof(double));
+    cudaMalloc((void**)(&d_index2), sizeof(double));
     cudaMalloc((void**)(&d_nodes), num_taxa*(sizeof(Node)));
     cudaMalloc((void**)(&d_temp_node), sizeof(Node));
     printf("*** Allocating GPU memory complete ***\n\n");
@@ -623,7 +640,7 @@ int main() {
     //printf("Launching kernel with blockDim: %d, %d, %d\n", blockDim.x, blockDim.y, blockDim.z);
     
     auto start_time = high_resolution_clock::now(); 
-    gpu_nj<<<gridsize, blocksize>>>(num_taxa, d_dist_mat, d_TD_arr, d_TB_min,  d_nodes, d_temp_node);
+    gpu_nj<<<gridsize, blocksize>>>(num_taxa, d_dist_mat, d_TD_arr, d_TB_min,  d_nodes, d_temp_node, d_index1, d_index2);
     cudaDeviceSynchronize();    
     auto end_time = high_resolution_clock::now();
     auto duration = duration_cast<microseconds>(end_time - start_time);
