@@ -35,11 +35,11 @@ struct node {
     struct node* leftChild;
     struct node* rightChild;
     struct node* parent;
-    double distance_left, distance_right;
+    float distance_left, distance_right;
 };
 typedef struct node Node;
 
-Node* Node_new_all(int s, Node* lChild, Node* rChild, double lDistance, double rDistance){
+Node* Node_new_all(int s, Node* lChild, Node* rChild, float lDistance, float rDistance){
     Node* this_node = (Node*)malloc(sizeof(Node));
     this_node->node_name     = s;
     this_node->leftChild     = lChild;
@@ -63,7 +63,7 @@ Node* Node_new(int s) {
     return(this_node);
 }
 
-int readFromFile(double* dist_mat, char seq[MAX_TAXA], string filename, Node* nodes[MAX_TAXA]) {
+int readFromFile(float* dist_mat, char seq[MAX_TAXA], string filename, Node* nodes[MAX_TAXA]) {
     cout<<filename<<endl;
     ifstream infile(filename);
 
@@ -102,7 +102,7 @@ int readFromFile(double* dist_mat, char seq[MAX_TAXA], string filename, Node* no
     return num_taxa;
 }
 
-void printDistanceMatrix(double* dist_mat, int num_taxa, Node* nodes[MAX_TAXA]){
+void printDistanceMatrix(float* dist_mat, int num_taxa, Node* nodes[MAX_TAXA]){
 	cout<< "Num_taxa = " << num_taxa <<endl;
     for (int i = 0; i < num_taxa; i++) {
         if(nodes[i]==nullptr)        {
@@ -118,7 +118,7 @@ void printDistanceMatrix(double* dist_mat, int num_taxa, Node* nodes[MAX_TAXA]){
     }
 }
 
-void printTDMatrix(double TD_arr[MAX_TAXA], int num_taxa){
+void printTDMatrix(float TD_arr[MAX_TAXA], int num_taxa){
     for(int i=0 ; i<num_taxa; i++){
         cout<<TD_arr[i] << " " ;
     }
@@ -151,13 +151,13 @@ void traverseAndWrite(Node* node, ofstream& outfile) {
 
 
 
-__global__ void gpu_nj(int num_taxa, double* d_dist_mat, double* d_TD_arr, double* d_TB_min, Node** d_nodes, Node* d_temp_node, double* d_index1, double* d_index2){
+__global__ void gpu_nj_sum(int num_taxa, float* d_dist_mat, float* d_TD_arr, float* d_TB_min, Node** d_nodes, Node* d_temp_node, float* d_index1, float* d_index2, int nj_iter){
 
     /*
         Device variables needed - dist_mat, TD_arr
     */ 
 
-    int tid = blockIdx.x*blockDim.x + threadIdx.x;
+    //int tid = blockIdx.x*blockDim.x + threadIdx.x;
     int t_row = blockIdx.x*blockDim.x + threadIdx.y;
     int t_row_z = threadIdx.y;
     int t_col_og = threadIdx.x;
@@ -166,36 +166,30 @@ __global__ void gpu_nj(int num_taxa, double* d_dist_mat, double* d_TD_arr, doubl
     //int t_col = tid % num_taxa;
     //__shared__ int index1, index2;
     //__shared__ int min_index, max_index;
-    //__shared__ double delta_ij, limb_length_i, limb_length_j;
-    __shared__ double D_star_mat[32][2]; 
-    //__shared__ double s_td_arr[32];
+    //__shared__ float delta_ij, limb_length_i, limb_length_j;
+    //__shared__ float D_star_mat[32][2]; 
+    //__shared__ float s_td_arr[32];
 
-    int index1, index2;
-    __shared__ int min_index;
-    __shared__ int max_index;
-    __shared__ double delta_ij;
-    __shared__ double limb_length_i;
-    __shared__ double limb_length_j;
-    //__shared__ double min_D_star_mat[TILE_WIDTH][2];
+    //int index1, index2;
+    //__shared__ int min_index;
+    //__shared__ int max_index;
+    //__shared__ float delta_ij;
+    //__shared__ float limb_length_i;
+    //__shared__ float limb_length_j;
+    //__shared__ float min_D_star_mat[TILE_WIDTH][2];
     __shared__ int col_active[TILE_WIDTH];
     __shared__ int row_active[TILE_WIDTH];
-    __shared__ double sum_tile[TILE_WIDTH][TILE_WIDTH];
-    //double d_TD_arr[32];
-    __shared__ double min_row_mat[2][TILE_WIDTH][TILE_WIDTH];
-    int n;
-    int i, j;
-    double min_d_star_row;
-
-
-
-            
+    __shared__ float sum_tile[TILE_WIDTH][TILE_WIDTH];
+    //float d_TD_arr[32];
+    //__shared__ float min_row_mat[2][TILE_WIDTH][TILE_WIDTH];
+    //int i, j;
+    //float min_d_star_row;
     int col_tile_iter;
     int par_sum_iter = TILE_WIDTH / 2;
-   
+    //int n = num_taxa - nj_iter;
+
     // FIXME: OPT - can go down the column per thread
     // parallel sum possible 
-    for(i=0 ; i<num_taxa-2; i++) {
-        n = num_taxa - i;
 
         // initialize sum to 0
         
@@ -227,34 +221,36 @@ __global__ void gpu_nj(int num_taxa, double* d_dist_mat, double* d_TD_arr, doubl
             }
         }
         __syncthreads();
+/*
+if(t_row == 0 && t_col_og == 0) {
+    printf("Printing sum_tile_Arr\n");
+    for(int dbg = 0; dbg < TILE_WIDTH; dbg++){
+        for(int dbg2 = 0; dbg2 < TILE_WIDTH; dbg2++){
+            printf("%lf ", sum_tile[dbg][dbg2]);
+        }
+        printf("\n");
+    }
+    printf("\n");
+}
+__syncthreads();
 
-//if(t_row == 0 && t_col_og == 0) {
-//    printf("Printing sum_tile_Arr\n");
-//    for(int dbg = 0; dbg < TILE_WIDTH; dbg++){
-//        for(int dbg2 = 0; dbg2 < TILE_WIDTH; dbg2++){
-//            printf("%lf ", sum_tile[dbg][dbg2]);
-//        }
-//        printf("\n");
-//    }
-//    printf("\n");
-//}
-
-//if(t_row == 0 && t_col == 0) {
-//    printf("Printing col_active\n");
-//    for(int dbg = 0; dbg < TILE_WIDTH; dbg++){
-//        printf("%d ", col_active[dbg]);
-//    }
-//    printf("\n");
-//}
-//if(t_row == 0 && t_col == 0) {
-//    printf("Printing row_active\n");
-//    for(int dbg = 0; dbg < TILE_WIDTH; dbg++){
-//        printf("%d ", row_active[dbg]);
-//    }
-//    printf("\n");
-//}
-//__syncthreads();
-
+if(t_row == 0 && t_col_og == 0) {
+    printf("Printing col_active\n");
+    for(int dbg = 0; dbg < TILE_WIDTH; dbg++){
+        printf("%d ", col_active[dbg]);
+    }
+    printf("\n");
+}
+__syncthreads();
+if(t_row == 0 && t_col_og == 0) {
+    printf("Printing row_active\n");
+    for(int dbg = 0; dbg < TILE_WIDTH; dbg++){
+        printf("%d ", row_active[dbg]);
+    }
+    printf("\n");
+}
+__syncthreads();
+*/
         
         // now find the sum of that row of the memory with parallel sum
         /*
@@ -295,25 +291,89 @@ __global__ void gpu_nj(int num_taxa, double* d_dist_mat, double* d_TD_arr, doubl
         __syncthreads();
 
         // DEBUG print the TD_arr
-//
-//if(t_row == 0 && t_col == 0) {
-//    printf("Printing TD_Arr\n");
-//    for(int dbg = 0; dbg < num_taxa; dbg++){
-//        printf("%lf ", d_TD_arr[dbg]);
-//    }
-//    printf("\n");
-//}
-//__syncthreads();        
+/*
+if(t_row == 0 && t_col_og == 0) {
+    printf("Printing TD_Arr\n");
+    for(int dbg = 0; dbg < num_taxa; dbg++){
+        printf("%lf ", d_TD_arr[dbg]);
+    }
+    printf("\n");
+}
+__syncthreads();        
+*/
+
+// d_TD_arr should have all the values of the rows
+
+};
 
 
 
 
-        
+__global__ void gpu_nj_min(int num_taxa, float* d_dist_mat, float* d_TD_arr, float* d_TB_min, Node** d_nodes, Node* d_temp_node, float* d_index1, float* d_index2, int nj_iter){
+       
+
+    //int tid = blockIdx.x*blockDim.x + threadIdx.x;
+    int t_row = blockIdx.x*blockDim.x + threadIdx.y;
+    int t_row_z = threadIdx.y;
+    int t_col_og = threadIdx.x;
+    int t_col = t_col_og;
+
+    //int index1, index2;
+    //__shared__ int min_index;
+    //__shared__ int max_index;
+    //__shared__ float delta_ij;
+    //__shared__ float limb_length_i;
+    //__shared__ float limb_length_j;
+    //__shared__ float min_D_star_mat[TILE_WIDTH][2];
+    __shared__ int col_active[TILE_WIDTH];
+    __shared__ int row_active[TILE_WIDTH];
+    //__shared__ float sum_tile[TILE_WIDTH][TILE_WIDTH];
+    //float d_TD_arr[32];
+    __shared__ float min_row_mat[2][TILE_WIDTH][TILE_WIDTH];
+    //int i, j;
+    //float min_d_star_row;
+    int col_tile_iter;
+    //int par_sum_iter = TILE_WIDTH / 2;
+    int n = num_taxa - nj_iter;
+
+
+/*
+if(t_row == 0 && t_col_og == 0) {
+    printf("Printing TD_Arr\n");
+    for(int dbg = 0; dbg < num_taxa; dbg++){
+        printf("%lf ", d_TD_arr[dbg]);
+    }
+    printf("\n");
+}
+__syncthreads();        
+*/
+
+/*
+if(t_row == 0 && t_col_og == 0) {
+    printf("printing d_dist_mat\n");
+    for(int dbg1 = 0; dbg1 < num_taxa; dbg1++){
+       for(int dbg2 = 0; dbg2 < num_taxa; dbg2++) {
+            printf("%lf ", d_dist_mat[dbg1*num_taxa + dbg2]);
+        }
+        printf("\n");
+    }
+}
+__syncthreads();
+*/
+        if(t_col_og == 0){
+            row_active[t_row_z] = -1;
+            if(d_dist_mat[t_row] != -1 && t_row < num_taxa){
+                row_active[t_row_z] = 1;
+            }
+        }
+        __syncthreads();
+
+ 
         // initialize min_row_mat with INT_MAX
         min_row_mat[0][t_row_z][t_col_og] = INT_MAX;
         min_row_mat[1][t_row_z][t_col_og] = t_col_og;
 
-        double curr_value, calc_value, curr_index;
+        float curr_value, calc_value, curr_index;
         curr_value = INT_MAX;
         curr_index = t_col_og;
         __syncthreads();
@@ -342,14 +402,14 @@ __global__ void gpu_nj(int num_taxa, double* d_dist_mat, double* d_TD_arr, doubl
                 }
             }
         }
-        // store the curr_index and curr_value
+        // store the curr_index and curr_value for that thread
         min_row_mat[0][t_row_z][t_col_og] = curr_value;
         min_row_mat[1][t_row_z][t_col_og] = curr_index;
         __syncthreads();
 
 /*
-if(t_row == 0 && t_col == 0) {
-    printf("printing d_star values\n");
+if(t_row == 2 && t_col_og == 0) {
+    printf("printing min_row_mat values\n");
     for(int dbg = 0; dbg < TILE_WIDTH; dbg++){
         for(int dbg2=0; dbg2 < TILE_WIDTH; dbg2++){
             printf("%lf ", min_row_mat[0][dbg][dbg2]); 
@@ -374,26 +434,18 @@ __syncthreads();
         }
         __syncthreads();
         // PRINT THE MIN_ROW_MAT[0] values
-//
-//if(t_row == 0 && t_col == 0) {
-//    printf("printing d_dist_mat\n");
-//    for(int dbg1 = 0; dbg1 < num_taxa; dbg1++){
-//       for(int dbg2 = 0; dbg2 < num_taxa; dbg2++) {
-//            printf("%lf ", d_dist_mat[dbg1*num_taxa + dbg2]);
-//        }
-//        printf("\n");
-//    }
-//}
-//__syncthreads();
-//if(t_row == 0 && t_col == 0) {
-//    printf("printing min_row values\n");
-//    for(int dbg = 0; dbg < TILE_WIDTH; dbg++){
-//       printf("row: %d, min_row = %lf index = %lf \n", dbg, min_row_mat[0][dbg][0], min_row_mat[1][dbg][0]); 
-//    }
-//}
-//__syncthreads();
 
-        double min_row_index, min_col_index;
+/*
+if(t_row == 0 && t_col_og == 0) {
+    printf("printing min_row values\n");
+    for(int dbg = 0; dbg < TILE_WIDTH; dbg++){
+       printf("row: %d, min_row = %lf index = %lf \n", dbg, min_row_mat[0][dbg][0], min_row_mat[1][dbg][0]); 
+    }
+}
+__syncthreads();
+*/
+
+        float min_row_index, min_col_index;
         // find the min of all rows and the index pair
         if(t_row_z == 0 && t_col_og == 0){
             curr_value = min_row_mat[0][0][0];
@@ -412,7 +464,40 @@ __syncthreads();
             //printf("d_TB_min = %lf, min_row_index = %lf, min_col_index = %lf\n", curr_value, min_row_index, min_col_index);
         }
         __syncthreads();
-                        
+
+};
+
+
+__global__ void gpu_nj_update(int num_taxa, float* d_dist_mat, float* d_TD_arr, float* d_TB_min, Node** d_nodes, Node* d_temp_node, float* d_index1, float* d_index2, int nj_iter){
+
+    //int tid = blockIdx.x*blockDim.x + threadIdx.x;
+    int t_row = blockIdx.x*blockDim.x + threadIdx.y;
+    int t_row_z = threadIdx.y;
+    int t_col_og = threadIdx.x;
+    int t_col = t_col_og;
+
+    int index1, index2;
+    __shared__ int min_index;
+    __shared__ int max_index;
+    __shared__ float delta_ij;
+    __shared__ float limb_length_i;
+    __shared__ float limb_length_j;
+    //__shared__ float min_D_star_mat[TILE_WIDTH][2];
+    //__shared__ int col_active[TILE_WIDTH];
+    //__shared__ int row_active[TILE_WIDTH];
+    //__shared__ float sum_tile[TILE_WIDTH][TILE_WIDTH];
+    //float d_TD_arr[32];
+    //__shared__ float min_row_mat[2][TILE_WIDTH][TILE_WIDTH];
+    //int i, j;
+    //float min_d_star_row;
+    //int col_tile_iter;
+    //int par_sum_iter = TILE_WIDTH / 2;
+    int n = num_taxa - nj_iter;
+                       
+
+    int min_iter;
+    float curr_value; 
+
         // reduce the d_TB_min
         if(t_row_z == 0 && t_col_og == 0){
             curr_value = d_TB_min[0];
@@ -425,13 +510,16 @@ __syncthreads();
                     index2 = d_TB_min[2*gridDim.x + min_iter];
                 }
             }
+            // ALL TB should print same values
+            //printf(" min_value = %lf, index1 = %d, index2 = %d\n", curr_value, index1, index2);
         }        
         __syncthreads();
-
-//if(t_row == 0 && t_col_og == 0){
-//    printf(" min_value = %lf, index1 = %d, index2 = %d\n", curr_value, index1, index2);
-//}
-//__syncthreads();                        
+/*
+if(t_row == 0 && t_col_og == 0){
+    printf(" min_value = %lf, index1 = %d, index2 = %d\n", curr_value, index1, index2);
+}
+__syncthreads();                        
+*/
                                      
                                      
                                      
@@ -475,22 +563,25 @@ __syncthreads();
         */
 
 
-
-        // currently only the TB 0 has all the values of min and max
-        if(t_row == 0 && t_col_og == 0) {
+        if(t_row_z == 0 && t_col_og == 0) {
             min_index = (index1 < index2) ? index1 : index2;
             max_index = (index1 < index2) ? index2 : index1;
             delta_ij = (d_TD_arr[min_index] - d_TD_arr[max_index]) / (n-2);
             limb_length_i = (d_dist_mat[min_index*num_taxa + max_index] + delta_ij)/2.0;
             limb_length_j = (d_dist_mat[min_index*num_taxa + max_index] - delta_ij)/2.0;
-            *d_index1 = min_index;
-            *d_index2 = max_index;
+            //*d_index1 = min_index;
+            //*d_index2 = max_index;
         }
-
         __syncthreads();
+/*
+if(t_row == 0 && t_col_og == 0){
+    printf("Updating the dist_mat\n");
+    printf("min_index = %d, max_index = %d\n", min_index, max_index);
+}
+*/
 
-        min_index = *d_index1;
-        max_index = *d_index2;
+        //min_index = *d_index1;
+        //max_index = *d_index2;
 
         //updateDistanceMatrix(d_dist_mat,num_taxa, min_index, max_index);
 
@@ -513,7 +604,7 @@ __syncthreads();
         */
 
 //
-//if(t_row == 0 && t_col == 0) {
+//if(t_row == 0 && t_col_og == 0) {
 //    printf("printing d_dist_mat\n");
 //    for(int dbg1 = 0; dbg1 < num_taxa; dbg1++){
 //       for(int dbg2 = 0; dbg2 < num_taxa; dbg2++) {
@@ -530,7 +621,7 @@ __syncthreads();
             d_dist_mat[min_index*num_taxa] = -1;
             d_dist_mat[min_index] = -1;
          
-            d_temp_node->node_name      = i;
+            d_temp_node->node_name      = nj_iter;
             d_temp_node->leftChild      = d_nodes[min_index];
             d_temp_node->rightChild     = d_nodes[max_index];
             d_temp_node->parent         = nullptr;
@@ -565,12 +656,11 @@ __syncthreads();
 
         }
         */
-    }        
              
     // Copyi ng the TD_arr back to GPU global memory
 
-    if(tid < num_taxa);
-        d_TD_arr[tid] = d_TD_arr[tid];
+    //if(tid < num_taxa);
+    //    d_TD_arr[tid] = d_TD_arr[tid];
 
     //__syncthreads();
 
@@ -580,8 +670,9 @@ __syncthreads();
 
 int main() {
     
-    string filename = "./examples/evolution.in";
+    //string filename = "./examples/evolution.in";
     //string filename = "./examples/INGI2368.in";
+    string filename = "./scripting/IN500.in";
     ifstream infile(filename);
     if (!infile) {
         cerr << "Error opening file" << endl;
@@ -589,10 +680,10 @@ int main() {
     }
     int num_taxa;
     infile >> num_taxa;
-    //double dist_mat[num_taxa*num_taxa];
-    double* dist_mat;
-    dist_mat = (double *)malloc(num_taxa*num_taxa*sizeof(double));
-    double* d_dist_mat;
+    //float dist_mat[num_taxa*num_taxa];
+    float* dist_mat;
+    dist_mat = (float *)malloc(num_taxa*num_taxa*sizeof(float));
+    float* d_dist_mat;
     char seq[num_taxa];
     Node* nodes[num_taxa];
     readFromFile(dist_mat, seq, filename, nodes);
@@ -601,13 +692,13 @@ int main() {
     printDistanceMatrix(dist_mat, num_taxa, nodes);
     //int index1, index2;
     //int min_index, max_index;
-    //double delta_ij, limb_length_i, limb_length_j;
+    //float delta_ij, limb_length_i, limb_length_j;
     //int n;
-    double TD_arr[num_taxa];
-    double* d_TD_arr;
-    double* d_TB_min;
-    double* d_index1;
-    double* d_index2;
+    float TD_arr[num_taxa];
+    float* d_TD_arr;
+    float* d_TB_min;
+    float* d_index1;
+    float* d_index2;
     int num_TB = (num_taxa + TILE_WIDTH - 1) / TILE_WIDTH;
 
     // allocate memory and copy the variables to GPU, 
@@ -616,19 +707,19 @@ int main() {
     // free GPU memory
 
     printf("*** Allocating GPU memory ***\n");
-    cudaMalloc((void**)(&d_dist_mat), num_taxa*num_taxa*(sizeof(double)));
-    cudaMalloc((void**)(&d_TD_arr), num_taxa*(sizeof(double)));
-    cudaMalloc((void**)(&d_TB_min), 3*num_TB*(sizeof(double)));
-    cudaMalloc((void**)(&d_index1), sizeof(double));
-    cudaMalloc((void**)(&d_index2), sizeof(double));
+    cudaMalloc((void**)(&d_dist_mat), num_taxa*num_taxa*(sizeof(float)));
+    cudaMalloc((void**)(&d_TD_arr), num_taxa*(sizeof(float)));
+    cudaMalloc((void**)(&d_TB_min), 3*num_TB*(sizeof(float)));
+    cudaMalloc((void**)(&d_index1), sizeof(float));
+    cudaMalloc((void**)(&d_index2), sizeof(float));
     cudaMalloc((void**)(&d_nodes), num_taxa*(sizeof(Node)));
     cudaMalloc((void**)(&d_temp_node), sizeof(Node));
     printf("*** Allocating GPU memory complete ***\n\n");
 
     printf("*** Copying to GPU memory ***\n");
-    checkCudaError(cudaMemcpy(d_dist_mat, dist_mat, num_taxa*num_taxa*(sizeof(double)), cudaMemcpyHostToDevice));    
-    //cudaMemcpy(&d_TD_arr, &TD_arr, num_taxa*(sizeof(double)), cudaMemcpyHostToDevice);
-    //cudaMemcpy(&d_TB_min, &d_TB_min, 3*num_TB*(sizeof(double)), cudaMemcpyHostToDevice);
+    checkCudaError(cudaMemcpy(d_dist_mat, dist_mat, num_taxa*num_taxa*(sizeof(float)), cudaMemcpyHostToDevice));    
+    //cudaMemcpy(&d_TD_arr, &TD_arr, num_taxa*(sizeof(float)), cudaMemcpyHostToDevice);
+    //cudaMemcpy(&d_TB_min, &d_TB_min, 3*num_TB*(sizeof(float)), cudaMemcpyHostToDevice);
     //cudaMemcpy(&d_nodes, &nodes, num_taxa*(sizeof(Node)), cudaMemcpyHostToDevice);
     printf("*** Copying to GPU memory complete ***\n\n");
 
@@ -639,9 +730,18 @@ int main() {
     //printf("Launching kernel with griddim: %d, %d, %d\n", gridDim.x, gridDim.y, gridDim.z);
     //printf("Launching kernel with blockDim: %d, %d, %d\n", blockDim.x, blockDim.y, blockDim.z);
     
-    auto start_time = high_resolution_clock::now(); 
-    gpu_nj<<<gridsize, blocksize>>>(num_taxa, d_dist_mat, d_TD_arr, d_TB_min,  d_nodes, d_temp_node, d_index1, d_index2);
-    cudaDeviceSynchronize();    
+    int nj_iter = 0;
+
+    auto start_time = high_resolution_clock::now();     
+    for(nj_iter = 0; nj_iter < num_taxa - 2; nj_iter++) {
+        gpu_nj_sum<<<gridsize, blocksize>>>(num_taxa, d_dist_mat, d_TD_arr, d_TB_min,  d_nodes, d_temp_node, d_index1, d_index2, nj_iter);
+        cudaDeviceSynchronize();    
+        gpu_nj_min<<<gridsize, blocksize>>>(num_taxa, d_dist_mat, d_TD_arr, d_TB_min,  d_nodes, d_temp_node, d_index1, d_index2, nj_iter);
+        cudaDeviceSynchronize();    
+        gpu_nj_update<<<gridsize, blocksize>>>(num_taxa, d_dist_mat, d_TD_arr, d_TB_min,  d_nodes, d_temp_node, d_index1, d_index2, nj_iter);
+        cudaDeviceSynchronize();    
+    }
+    
     auto end_time = high_resolution_clock::now();
     auto duration = duration_cast<microseconds>(end_time - start_time);
     printf("### \n Elapsed Time %" PRId64 "\n###\n", duration.count());
@@ -650,9 +750,9 @@ int main() {
     //checkCudaError(cudaGetLastError());
     printf("***  GPU computation complete ***\n");
 
-    checkCudaError(cudaMemcpy(dist_mat, d_dist_mat, num_taxa*num_taxa*sizeof(double), cudaMemcpyDeviceToHost));
+    checkCudaError(cudaMemcpy(dist_mat, d_dist_mat, num_taxa*num_taxa*sizeof(float), cudaMemcpyDeviceToHost));
     printf("*** Transferring data from Device to Host complete ***\n");
-    //checkCudaError(cudaMemcpy(TD_arr, d_TD_arr, num_taxa*sizeof(double), cudaMemcpyDeviceToHost));
+    //checkCudaError(cudaMemcpy(TD_arr, d_TD_arr, num_taxa*sizeof(float), cudaMemcpyDeviceToHost));
     printf("*** Transferring data from Device to Host complete ***\n");
     //checkCudaError(cudaMemcpy(nodes, *d_nodes, num_taxa*sizeof(Node), cudaMemcpyDeviceToHost));
     printf("*** Transferring data from Device to Host complete ***\n");
