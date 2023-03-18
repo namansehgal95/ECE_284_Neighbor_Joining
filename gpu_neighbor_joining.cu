@@ -19,7 +19,7 @@ using namespace std;
 using namespace std::chrono;
 #define TILE_WIDTH 16
 
-const int MAX_TAXA = 100;
+const int MAX_TAXA = 1000;
 
 void checkCudaError(cudaError_t err)
 {
@@ -671,8 +671,8 @@ if(t_row == 0 && t_col_og == 0){
 int main() {
     
     //string filename = "./examples/evolution.in";
-    //string filename = "./examples/INGI2368.in";
-    string filename = "./scripting/IN500.in";
+    string filename = "./examples/INGI2368.in";
+    //string filename = "./scripting/IN1500.in";
     ifstream infile(filename);
     if (!infile) {
         cerr << "Error opening file" << endl;

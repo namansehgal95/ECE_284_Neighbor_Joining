@@ -18,7 +18,7 @@
 using namespace std;
 using namespace std::chrono;
 
-const int MAX_TAXA = 500;
+const int MAX_TAXA = 1000;
 
 class Node {
     public:
@@ -26,7 +26,7 @@ class Node {
     Node* leftChild;
     Node* rightChild;
     Node* parent;
-    double distance_left, distance_right;
+    float distance_left, distance_right;
     /**
      * Node constructor, which initializes everything
      */
@@ -39,7 +39,7 @@ class Node {
         this->distance_right = -1;  
     }
 
-    Node(string s, Node* lChild, Node* rChild, double lDistance, double rDistance) {
+    Node(string s, Node* lChild, Node* rChild, float lDistance, float rDistance) {
         this->node_name     = s;
         this->leftChild     = lChild;
         this->rightChild    = rChild;
@@ -51,7 +51,7 @@ class Node {
     }
 };
 
-int readFromFile(double arr[MAX_TAXA][MAX_TAXA], char seq[MAX_TAXA], string filename, Node* nodes[MAX_TAXA]) {
+int readFromFile(float arr[MAX_TAXA][MAX_TAXA], char seq[MAX_TAXA], string filename, Node* nodes[MAX_TAXA]) {
     cout<<filename<<endl;
     ifstream infile(filename);
     if (!infile) {
@@ -86,7 +86,7 @@ int readFromFile(double arr[MAX_TAXA][MAX_TAXA], char seq[MAX_TAXA], string file
     return num_taxa;
 }
 
-void printDistanceMatrix(double arr[MAX_TAXA][MAX_TAXA], int num_taxa, Node* nodes[MAX_TAXA]){
+void printDistanceMatrix(float arr[MAX_TAXA][MAX_TAXA], int num_taxa, Node* nodes[MAX_TAXA]){
 	cout<< "Num_taxa = " << num_taxa <<endl;
     for (int i = 0; i < num_taxa; i++) {
         if(nodes[i]==nullptr)        {
@@ -102,7 +102,7 @@ void printDistanceMatrix(double arr[MAX_TAXA][MAX_TAXA], int num_taxa, Node* nod
     }
 }
 
-void printTDMatrix(double TD_arr[MAX_TAXA], int num_taxa){
+void printTDMatrix(float TD_arr[MAX_TAXA], int num_taxa){
     for(int i=0 ; i<num_taxa; i++){
         cout<<TD_arr[i] << " " ;
     }
@@ -141,9 +141,9 @@ void traverseAndWrite(Node* node, ofstream& outfile) {
 }
 
 
-void totalDistance(double arr[MAX_TAXA][MAX_TAXA], int num_taxa, double TD_arr[MAX_TAXA]){
+void totalDistance(float arr[MAX_TAXA][MAX_TAXA], int num_taxa, float TD_arr[MAX_TAXA]){
     for(int i=0; i<num_taxa; i++){
-        double sum=0;
+        float sum=0;
         TD_arr[i] = -1;
         if(arr[i][0]!=-1) {
             for (int k = 0; k < num_taxa; k++) {
@@ -158,13 +158,13 @@ void totalDistance(double arr[MAX_TAXA][MAX_TAXA], int num_taxa, double TD_arr[M
 
 /// @brief Calculate indexes with minimum D_star and store in array variable pair
 // Check if -1
-void find_closest_pair(double arr[MAX_TAXA][MAX_TAXA], int num_taxa, int n, double TD_arr[MAX_TAXA], int& index1, int& index2) {
-    double min_distance = INT_MAX;
+void find_closest_pair(float arr[MAX_TAXA][MAX_TAXA], int num_taxa, int n, float TD_arr[MAX_TAXA], int& index1, int& index2) {
+    float min_distance = INT_MAX;
     for (int i = 0; i < num_taxa; i++) {
         if(arr[i][0]!=-1) {
             for (int j = i + 1; j < num_taxa; j++) {
                 if(arr[j][0]!=-1){
-                    double D_star = (n - 2) * arr[i][j] - TD_arr[i] - TD_arr[j];
+                    float D_star = (n - 2) * arr[i][j] - TD_arr[i] - TD_arr[j];
                     if (D_star < min_distance) {
                         min_distance = D_star;
                         index1 = i;
@@ -172,13 +172,15 @@ void find_closest_pair(double arr[MAX_TAXA][MAX_TAXA], int num_taxa, int n, doub
                     }
                 }
             }
+            //printf("min_distance for row %d is %lf\n", i, min_distance);
         }
     }
+    //printf("min_distance %lf for index1 %d index2 %d\n", min_distance, index1, index2);
     //return min_distance / (num_taxa - 2);
 }
 
 //Pending
-void updateDistanceMatrix(double arr[MAX_TAXA][MAX_TAXA], int num_taxa, int min_index, int max_index) {
+void updateDistanceMatrix(float arr[MAX_TAXA][MAX_TAXA], int num_taxa, int min_index, int max_index) {
     for (int k = 0; k < num_taxa; k++) {
         if (k != min_index && k != max_index) {
             arr[max_index][k] = ( arr[min_index][k] + arr[max_index][k] - arr[min_index][max_index]) / 2;
@@ -191,15 +193,16 @@ void updateDistanceMatrix(double arr[MAX_TAXA][MAX_TAXA], int num_taxa, int min_
 int main() {
     
     //string file_name = "./examples/evolution.in";
-    string file_name = "./examples/IN500.in";
-    double arr[MAX_TAXA][MAX_TAXA];
+    string file_name = "./examples/INGI2368.in";
+    //string file_name = "./scripting/IN1000.in";
+    float arr[MAX_TAXA][MAX_TAXA];
     char seq[MAX_TAXA];
     Node* nodes[MAX_TAXA];
     //int num_taxa = read_DM_file(arr, seq, file_name, nodes);
     int num_taxa = readFromFile(arr, seq, file_name, nodes);
-    //printDistanceMatrix(arr, num_taxa, nodes);
+    printDistanceMatrix(arr, num_taxa, nodes);
 
-    double TD_arr[MAX_TAXA];
+    float TD_arr[MAX_TAXA];
     auto start_time = high_resolution_clock::now();
 
     for(int i=0 ; i<num_taxa -2; i++) {
@@ -215,9 +218,9 @@ int main() {
         
         int min_index = min(index1, index2);
         int max_index = max(index1, index2);
-        double delta_ij = (TD_arr[min_index] - TD_arr[max_index]) / (n-2);
-        double limb_length_i = (arr[min_index][max_index] + delta_ij)/2.0;
-        double limb_length_j = (arr[min_index][max_index] - delta_ij)/2.0;
+        float delta_ij = (TD_arr[min_index] - TD_arr[max_index]) / (n-2);
+        float limb_length_i = (arr[min_index][max_index] + delta_ij)/2.0;
+        float limb_length_j = (arr[min_index][max_index] - delta_ij)/2.0;
         updateDistanceMatrix(arr,num_taxa, min_index, max_index);
         string new_node_name = "(" + nodes[min_index]->node_name + nodes[max_index]->node_name + ")";
         cout<<new_node_name<<endl;
@@ -230,6 +233,8 @@ int main() {
     auto end_time = high_resolution_clock::now();
     auto duration = duration_cast<microseconds>(end_time - start_time);
     printf("### \n Elapsed Time %" PRId64 "\n###\n", duration.count());
+    
+    printDistanceMatrix(arr, num_taxa, nodes);
 
 
     int final_index1 = -1;
