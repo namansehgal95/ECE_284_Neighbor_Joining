@@ -2,12 +2,17 @@
 
 Run the code using the command:
 
-    g++ neighbor_join.cpp -o a.exe; ./a.exe
+    g++ neighbor_join.cpp -o cpu_nj
+       
+The code can be executed by the command:
+    
+    ./cpu_nj
 
-Following this, run Graphviz using the below command (g.gv dumped from the above command)
+For running the GPU code, please compile using the following command:
 
-    dot -Tpng g.gv -o file.png
+    nvcc gpu_neighbor_joining.cu -o gpu_nj
+    
+Then the executable can be run by:
 
-This will generate a png file called file.png which can be viewed with any image viewer. 
-
-Note: Will need to download Graphviz. It can be downloaded from https://graphviz.org/download/
+    ./gpu_nj
+    
