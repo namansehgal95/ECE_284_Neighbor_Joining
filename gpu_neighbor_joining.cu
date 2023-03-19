@@ -19,7 +19,7 @@ using namespace std;
 using namespace std::chrono;
 #define TILE_WIDTH 20
 
-const int MAX_TAXA = 1000;
+const int MAX_TAXA = 2000;
 
 void checkCudaError(cudaError_t err)
 {
@@ -221,58 +221,9 @@ __global__ void gpu_nj_sum(int num_taxa, float* d_dist_mat, float* d_TD_arr, flo
             }
         }
         __syncthreads();
-/*
-if(t_row == 0 && t_col_og == 0) {
-    printf("Printing sum_tile_Arr\n");
-    for(int dbg = 0; dbg < TILE_WIDTH; dbg++){
-        for(int dbg2 = 0; dbg2 < TILE_WIDTH; dbg2++){
-            printf("%lf ", sum_tile[dbg][dbg2]);
-        }
-        printf("\n");
-    }
-    printf("\n");
-}
-__syncthreads();
 
-if(t_row == 0 && t_col_og == 0) {
-    printf("Printing col_active\n");
-    for(int dbg = 0; dbg < TILE_WIDTH; dbg++){
-        printf("%d ", col_active[dbg]);
-    }
-    printf("\n");
-}
-__syncthreads();
-if(t_row == 0 && t_col_og == 0) {
-    printf("Printing row_active\n");
-    for(int dbg = 0; dbg < TILE_WIDTH; dbg++){
-        printf("%d ", row_active[dbg]);
-    }
-    printf("\n");
-}
-__syncthreads();
-*/
-        
-        // now find the sum of that row of the memory with parallel sum
-        /*
-        while (par_sum_iter > 0) {
-            if(t_col_og < par_sum_iter){
-                sum_tile[t_row_z][t_col_og] += sum_tile[t_row_z][t_col_og + par_sum_iter];
-                //printf("par_sum_iter = %d\n", par_sum_iter);
-            }
-            __syncthreads();
-            par_sum_iter = par_sum_iter / 2;
-        }
-        
-        if(t_col_og == 0){
-            if(col_active[t_row_z] == 1){
-                d_TD_arr[t_row] = sum_tile[t_row_z][0];
-            }
-            else {
-                d_TD_arr[t_row] = -1;
-            }
-        }
-        */
-        
+
+
     
         // store the calculated sum to d_TD_arr
         
@@ -289,18 +240,6 @@ __syncthreads();
         }
         
         __syncthreads();
-
-        // DEBUG print the TD_arr
-/*
-if(t_row == 0 && t_col_og == 0) {
-    printf("Printing TD_Arr\n");
-    for(int dbg = 0; dbg < num_taxa; dbg++){
-        printf("%lf ", d_TD_arr[dbg]);
-    }
-    printf("\n");
-}
-__syncthreads();        
-*/
 
 // d_TD_arr should have all the values of the rows
 
@@ -336,30 +275,6 @@ __global__ void gpu_nj_min(int num_taxa, float* d_dist_mat, float* d_TD_arr, flo
     //int par_sum_iter = TILE_WIDTH / 2;
     int n = num_taxa - nj_iter;
 
-
-/*
-if(t_row == 0 && t_col_og == 0) {
-    printf("Printing TD_Arr\n");
-    for(int dbg = 0; dbg < num_taxa; dbg++){
-        printf("%lf ", d_TD_arr[dbg]);
-    }
-    printf("\n");
-}
-__syncthreads();        
-*/
-
-/*
-if(t_row == 0 && t_col_og == 0) {
-    printf("printing d_dist_mat\n");
-    for(int dbg1 = 0; dbg1 < num_taxa; dbg1++){
-       for(int dbg2 = 0; dbg2 < num_taxa; dbg2++) {
-            printf("%lf ", d_dist_mat[dbg1*num_taxa + dbg2]);
-        }
-        printf("\n");
-    }
-}
-__syncthreads();
-*/
 
 
         if(t_col_og == 0){
@@ -410,19 +325,6 @@ __syncthreads();
         min_row_mat[1][t_row_z][t_col_og] = curr_index;
         __syncthreads();
 
-
-/*
-if(t_row == 0 && t_col_og == 0) {
-    printf("printing min_row_mat values\n");
-    for(int dbg = 0; dbg < TILE_WIDTH; dbg++){
-        for(int dbg2=0; dbg2 < TILE_WIDTH; dbg2++){
-            printf("value - %lf index - %lf\n", min_row_mat[0][dbg][dbg2], min_row_mat[1][dbg][dbg2]); 
-        }
-        printf("\n");
-    }
-}
-__syncthreads();
-*/
         
         int min_iter;
         // find the min of the row and its index
@@ -439,15 +341,6 @@ __syncthreads();
         __syncthreads();
         // PRINT THE MIN_ROW_MAT[0] values
 
-/*
-if(t_row == 0 && t_col_og == 0) {
-    printf("printing min_row values\n");
-    for(int dbg = 0; dbg < TILE_WIDTH; dbg++){
-       printf("row: %d, min_row = %lf index = %lf \n", dbg, min_row_mat[0][dbg][0], min_row_mat[1][dbg][0]); 
-    }
-}
-__syncthreads();
-*/
 
         float min_row_index, min_col_index;
         // find the min of all rows and the index pair
@@ -519,57 +412,10 @@ __global__ void gpu_nj_update(int num_taxa, float* d_dist_mat, float* d_TD_arr, 
                     index2 = d_TB_min[2*gridDim.x + min_iter];
                 }
             }
-            // ALL TB should print same values
-            //printf(" min_value = %lf, index1 = %d, index2 = %d\n", curr_value, index1, index2);
         }        
         __syncthreads();
-/*
-if(t_row == 0 && t_col_og == 0){
-    printf(" min_value = %lf, index1 = %d, index2 = %d\n", curr_value, index1, index2);
-}
-__syncthreads();                        
-*/
                                      
                                      
-                                     
-                                     
-        /*                           
-        //find_closest_pair(d        _dist_mat,num_taxa, TD_arr, index1, index2);
-        // GPU code for find_        closest_pair
-        min_d_star_row = INT_        MAX;
-                                     
-        if(tid < num_taxa) {         
-            D_star_mat[tid][0        ] = INT_MAX;
-            if(d_dist_mat[tid        ] != -1) {
-                for (j = tid         + 1; j < num_taxa; j++) {
-                    if(d_dist        _mat[j] != -1){
-                        min_d        _star_row = (n - 2) * d_dist_mat[tid*num_taxa + j] - d_TD_arr[tid] - d_TD_arr[j];
-                        if (min_d_star_row < D_star_mat[tid][0]) {
-                            D_star_mat[tid][0] = min_d_star_row;
-                            D_star_mat[tid][1] = j;
-                            
-                            }
-                        }
-                    }
-                } else {
-                    D_star_mat[tid][0] = INT_MAX;
-                }
-            }
-        __syncthreads();
-        
-
-        // find the index pair which has absolute min among the d_star
-        if(tid == 0) {
-            min_d_star_row = INT_MAX;
-            for (j = 0; j < num_taxa; j++) {
-                if(D_star_mat[j][0] < min_d_star_row){
-                    min_d_star_row = D_star_mat[j][0];
-                    index1 = j;
-                    index2 = D_star_mat[j][1];
-                }
-            }
-        }
-        */
 
 
         if(t_row_z == 0 && t_col_og == 0) {
@@ -578,19 +424,9 @@ __syncthreads();
             delta_ij = (d_TD_arr[min_index] - d_TD_arr[max_index]) / (n-2);
             limb_length_i = (d_dist_mat[min_index*num_taxa + max_index] + delta_ij)/2.0;
             limb_length_j = (d_dist_mat[min_index*num_taxa + max_index] - delta_ij)/2.0;
-            //*d_index1 = min_index;
-            //*d_index2 = max_index;
         }
         __syncthreads();
-/*
-if(t_row == 0 && t_col_og == 0){
-    printf("Updating the dist_mat\n");
-    printf("min_index = %d, max_index = %d\n", min_index, max_index);
-}
-*/
 
-        //min_index = *d_index1;
-        //max_index = *d_index2;
 
         //updateDistanceMatrix(d_dist_mat,num_taxa, min_index, max_index);
 
@@ -602,27 +438,6 @@ if(t_row == 0 && t_col_og == 0){
             d_dist_mat[max_index*num_taxa + t_row] = d_dist_mat[t_row*num_taxa + max_index];
         }
         __syncthreads();
-
-        /*
-        if(t_row == 0 && t_col_og != min_index && t_col_og != max_index && t_col_og < num_taxa){
-            d_dist_mat[max_index*num_taxa + t_col] = (d_dist_mat[min_index*num_taxa + t_col_og] + d_dist_mat[max_index*num_taxa + t_col_og] - d_dist_mat[min_index*num_taxa + max_index]) / 2;
-            d_dist_mat[t_col_og*num_taxa + max_index] = d_dist_mat[max_index*num_taxa + t_col_og];
-            //printf("matrix value %d and %d updated \n", t_row, t_col);
-        }
-        __syncthreads();
-        */
-
-//
-//if(t_row == 0 && t_col_og == 0) {
-//    printf("printing d_dist_mat\n");
-//    for(int dbg1 = 0; dbg1 < num_taxa; dbg1++){
-//       for(int dbg2 = 0; dbg2 < num_taxa; dbg2++) {
-//            printf("%lf ", d_dist_mat[dbg1*num_taxa + dbg2]);
-//        }
-//        printf("\n");
-//    }
-//}
-//__syncthreads();
 
 
         // turn min_index to -1,
@@ -643,45 +458,16 @@ if(t_row == 0 && t_col_og == 0){
         }
         __syncthreads();
         
-        //print the matrix
-        /*
-        if(tid == 0){
-            for(int p=0; p<num_taxa; p++) {
-                printf("%lf ",d_TD_arr[p]);
-            }
-            
-            printf(" \n");
-            printf("min_d_star is %lf for i=%d, j=%d\n", min_d_star_row, min_index, max_index);
-            printf("delta_ij = %lf, Li = %lf, Lj = %lf\n", delta_ij, limb_length_i, limb_length_j);
-
-            printf("-- Printing d_dist_mat for iteration %d -- \n", i);
-            for(int p=0; p<num_taxa; p++){
-                printf(" row %d ", p);
-                for(int q=0; q<num_taxa; q++) {
-                    printf("%lf ", d_dist_mat[p*num_taxa + q]);
-                }
-                printf(" \n");
-            }
-
-        }
-        */
              
-    // Copyi ng the TD_arr back to GPU global memory
-
-    //if(tid < num_taxa);
-    //    d_TD_arr[tid] = d_TD_arr[tid];
-
-    //__syncthreads();
-
 };
 
 
 
 int main() {
     
-    string filename = "./examples/evolution.in";
+    //string filename = "./examples/evolution.in";
     //string filename = "./examples/INGI2368.in";
-    //string filename = "./scripting/IN600.in";
+    string filename = "./scripting/IN1000.in";
     ifstream infile(filename);
     if (!infile) {
         cerr << "Error opening file" << endl;
