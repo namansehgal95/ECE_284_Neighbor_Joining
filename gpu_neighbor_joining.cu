@@ -17,7 +17,7 @@
 
 using namespace std;
 using namespace std::chrono;
-#define TILE_WIDTH 16
+#define TILE_WIDTH 20
 
 const int MAX_TAXA = 1000;
 
@@ -360,6 +360,8 @@ if(t_row == 0 && t_col_og == 0) {
 }
 __syncthreads();
 */
+
+
         if(t_col_og == 0){
             row_active[t_row_z] = -1;
             if(d_dist_mat[t_row] != -1 && t_row < num_taxa){
@@ -375,6 +377,7 @@ __syncthreads();
 
         float curr_value, calc_value, curr_index;
         curr_value = INT_MAX;
+        calc_value = INT_MAX;
         curr_index = t_col_og;
         __syncthreads();
 
@@ -407,12 +410,13 @@ __syncthreads();
         min_row_mat[1][t_row_z][t_col_og] = curr_index;
         __syncthreads();
 
+
 /*
-if(t_row == 2 && t_col_og == 0) {
+if(t_row == 0 && t_col_og == 0) {
     printf("printing min_row_mat values\n");
     for(int dbg = 0; dbg < TILE_WIDTH; dbg++){
         for(int dbg2=0; dbg2 < TILE_WIDTH; dbg2++){
-            printf("%lf ", min_row_mat[0][dbg][dbg2]); 
+            printf("value - %lf index - %lf\n", min_row_mat[0][dbg][dbg2], min_row_mat[1][dbg][dbg2]); 
         }
         printf("\n");
     }
@@ -449,21 +453,26 @@ __syncthreads();
         // find the min of all rows and the index pair
         if(t_row_z == 0 && t_col_og == 0){
             curr_value = min_row_mat[0][0][0];
-            min_row_index = 0;
+            min_row_index = t_row;
             min_col_index = min_row_mat[1][0][0];
             for(min_iter = 1; min_iter < TILE_WIDTH; min_iter++){
                 if(min_row_mat[0][min_iter][0] < curr_value){
                     curr_value = min_row_mat[0][min_iter][0];
                     min_col_index = min_row_mat[1][min_iter][0];
-                    min_row_index = min_iter;
+                    min_row_index = t_row + min_iter;
                 }
             }
             d_TB_min[blockIdx.x] = curr_value;
             d_TB_min[gridDim.x + blockIdx.x] = min_row_index; // row
             d_TB_min[2*gridDim.x + blockIdx.x] = min_col_index; // col
-            //printf("d_TB_min = %lf, min_row_index = %lf, min_col_index = %lf\n", curr_value, min_row_index, min_col_index);
         }
         __syncthreads();
+
+/*
+if(t_row == 0 && t_col_og == 0) {
+    printf("d_TB_min = %lf, min_row_index = %lf, min_col_index = %lf\n", curr_value, min_row_index, min_col_index);
+}
+*/
 
 };
 
@@ -670,9 +679,9 @@ if(t_row == 0 && t_col_og == 0){
 
 int main() {
     
-    //string filename = "./examples/evolution.in";
-    string filename = "./examples/INGI2368.in";
-    //string filename = "./scripting/IN1500.in";
+    string filename = "./examples/evolution.in";
+    //string filename = "./examples/INGI2368.in";
+    //string filename = "./scripting/IN600.in";
     ifstream infile(filename);
     if (!infile) {
         cerr << "Error opening file" << endl;
@@ -694,7 +703,7 @@ int main() {
     //int min_index, max_index;
     //float delta_ij, limb_length_i, limb_length_j;
     //int n;
-    float TD_arr[num_taxa];
+    //float TD_arr[num_taxa];
     float* d_TD_arr;
     float* d_TB_min;
     float* d_index1;
