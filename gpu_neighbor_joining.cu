@@ -537,6 +537,7 @@ int main() {
         cudaDeviceSynchronize();    
     }
     
+ 
     auto end_time = high_resolution_clock::now();
     auto duration = duration_cast<microseconds>(end_time - start_time);
     printf("### \n Elapsed Time %" PRId64 "\n###\n", duration.count());
