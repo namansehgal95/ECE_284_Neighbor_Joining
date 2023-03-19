@@ -172,7 +172,7 @@ void find_closest_pair(float arr[MAX_TAXA][MAX_TAXA], int num_taxa, int n, float
                     }
                 }
             }
-            //printf("min_distance for row %d is %lf\n", i, min_distance);
+            //printf("min_distance for row %d is %lf with index1 %d index2 %d\n", i, min_distance, index1, index2);
         }
     }
     //printf("min_distance %lf for index1 %d index2 %d\n", min_distance, index1, index2);
@@ -193,8 +193,8 @@ void updateDistanceMatrix(float arr[MAX_TAXA][MAX_TAXA], int num_taxa, int min_i
 int main() {
     
     //string file_name = "./examples/evolution.in";
-    string file_name = "./examples/INGI2368.in";
-    //string file_name = "./scripting/IN1000.in";
+    //string file_name = "./examples/INGI2368.in";
+    string file_name = "./scripting/IN1000.in";
     float arr[MAX_TAXA][MAX_TAXA];
     char seq[MAX_TAXA];
     Node* nodes[MAX_TAXA];
